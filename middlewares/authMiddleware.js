@@ -30,6 +30,14 @@ export const authMiddleware = async (req, res, next) => {
             });
         }
 
+        if (!user.isActive) {
+            return res.status(403).json({
+                success: false,
+                message: "This account has been deactivated. Contact support for help.",
+                status: 403,
+            });
+        }
+
         req.user = user;
 
         next();

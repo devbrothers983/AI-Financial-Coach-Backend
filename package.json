@@ -5,20 +5,25 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "seed:admin": "node scripts/seedAdmin.js"
   },
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
     "bcrypt": "^6.0.0",
+    "cloudinary": "^2.11.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "google-auth-library": "^10.9.1",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.4",
-    "morgan": "^1.11.0"
+    "morgan": "^1.11.0",
+    "multer": "^2.3.0",
+    "nodemailer": "^10.0.9"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

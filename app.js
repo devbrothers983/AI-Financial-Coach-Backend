@@ -12,7 +12,12 @@ import { errorMiddleware } from './middlewares/errorMiddleware.js';
 import authRoutes from './routes/authRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
 import budgetRoutes from './routes/budgetRoutes.js';
-
+import goalRoutes from './routes/goalRoutes.js';
+import dashboardRoutes from "./routes/dashboardRoutes.js";
+import coachRoutes from "./routes/coachRoutes.js";
+import contactRoutes from "./routes/contactRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 dotenv.config()
 
@@ -26,7 +31,13 @@ app.use(cors())
 
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
-app.use("/api/budgets", budgetRoutes);
+app.use("/api/budgets", budgetRoutes);  
+app.use("/api/goals", goalRoutes);
+app.use("/api/dashboard", dashboardRoutes)
+app.use("/api/coach", coachRoutes);
+app.use("/api/contact", contactRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/admin", adminRoutes);
 
 
 

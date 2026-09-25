@@ -20,8 +20,46 @@ const userSchema = new mongoose.Schema({
 
     password: {
         type: String,
-        required: [true, 'Password is required'],
+        required: [
+            function () {
+                return this.authProvider === 'local';
+            },
+            'Password is required',
+        ],
         minlength: [8, 'Password must be at least 8 characters long'],
+        select: false,
+    },
+
+    googleId: {
+        type: String,
+        unique: true,
+        sparse: true,
+    },
+
+    authProvider: {
+        type: String,
+        enum: ['local', 'google'],
+        default: 'local',
+    },
+
+    avatarUrl: {
+        type: String,
+        default: null,
+    },
+
+    avatarPublicId: {
+        type: String,
+        default: null,
+        select: false,
+    },
+
+    resetPasswordOtp: {
+        type: String,
+        select: false,
+    },
+
+    resetPasswordOtpExpires: {
+        type: Date,
         select: false,
     },
 
@@ -63,6 +101,16 @@ const userSchema = new mongoose.Schema({
     onboardingCompleted: {
         type: Boolean,
         default: false,
+    },
+
+    isActive: {
+        type: Boolean,
+        default: true,
+    },
+
+    lastLoginAt: {
+        type: Date,
+        default: null,
     },
 },
     {

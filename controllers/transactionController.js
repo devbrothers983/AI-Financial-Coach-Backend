@@ -1,4 +1,5 @@
 import Transaction from "../models/Transaction.js";
+import { toTitleCase } from "../utils/formatText.js";
 
 import mongoose from "mongoose";
 // ========================================
@@ -44,7 +45,7 @@ export const createTransaction = async (req, res, next) => {
             transactionType,
             transactionAmount,
             transactionCategory,
-            description,
+            description: description ? toTitleCase(description) : description,
             transactionDate,
             paymentMethod,
             isRecurring,
@@ -443,7 +444,7 @@ export const updateTransaction = async (
 
 
         if (description !== undefined) {
-            updateData.description = description;
+            updateData.description = description ? toTitleCase(description) : description;
         }
 
 

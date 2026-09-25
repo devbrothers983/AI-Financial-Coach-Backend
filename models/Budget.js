@@ -38,6 +38,19 @@ const budgetSchema = new mongoose.Schema({
             },
         },
     ],
+    linkedGoal:{
+        type:mongoose.Schema.Types.ObjectId,
+        ref:"Goal",
+        default:null,
+    },
+    swept:{
+        type:Boolean,
+        default:false,
+    },
+    sweptAmount:{
+        type:Number,
+        default:0,
+    },
 },{timestamps:true});
 
 // prevent dupllicat budget for same user/month/year
