@@ -28,8 +28,14 @@ const app = express()
 app.use(express.json())
 app.use(morgan('dev'))
 app.use(helmet())
+// FRONTEND_URL can hold several comma-separated origins (e.g. Vercel + localhost)
+const allowedOrigins = (process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((url) => url.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+
 app.use(cors({
-    origin: process.env.FRONTEND_URL,
+    origin: allowedOrigins,
     credentials: true,
 }));
 
