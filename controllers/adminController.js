@@ -146,14 +146,17 @@ export const getUserById = async (req, res, next) => {
             });
         }
 
-        const [transactionCount, budgetCount, goalCount, totals] = await Promise.all([
+        const [transactionCount, budgetCount, goalCount, messageCount, totals, budgets, goals] = await Promise.all([
             Transaction.countDocuments({ userId: id }),
             Budget.countDocuments({ userId: id }),
             Goal.countDocuments({ userId: id }),
+            ContactMessage.countDocuments({ email: user.email }),
             Transaction.aggregate([
                 { $match: { userId: user._id } },
                 { $group: { _id: "$transactionType", total: { $sum: "$transactionAmount" } } },
             ]),
+            Budget.find({ userId: id }).select("month year totalBudget categories").sort({ year: -1, month: -1 }).limit(12),
+            Goal.find({ userId: id }).select("title targetAmount currentAmount targetDate status priority").sort({ createdAt: -1 }),
         ]);
 
         const totalIncome = totals.find((t) => t._id === "income")?.total || 0;
@@ -164,7 +167,9 @@ export const getUserById = async (req, res, next) => {
             message: "User retrieved successfully",
             user: {
                 ...user.toObject(),
-                stats: { transactionCount, budgetCount, goalCount, totalIncome, totalExpense },
+                stats: { transactionCount, budgetCount, goalCount, messageCount, totalIncome, totalExpense },
+                budgets,
+                goals,
             },
             status: 200,
         });
@@ -218,6 +223,8 @@ export const getUserTransactions = async (req, res, next) => {
 export const getUserActivityTimeline = async (req, res, next) => {
     try {
         const { id } = req.params;
+        const { type } = req.query;
+        const limit = Math.min(Math.max(Number(req.query.limit) || 150, 1), 300);
 
         const user = await User.findById(id).select("username email createdAt lastLoginAt");
 
@@ -231,44 +238,93 @@ export const getUserActivityTimeline = async (req, res, next) => {
 
         // There's no dedicated activity log, so the timeline is built from
         // the timestamps on everything the user has created.
+        const wants = (kind) => !type || type === kind;
+
         const [transactions, budgets, goals, messages] = await Promise.all([
-            Transaction.find({ userId: id })
-                .select("transactionType transactionAmount transactionCategory description createdAt")
-                .sort({ createdAt: -1 })
-                .limit(30),
-            Budget.find({ userId: id }).select("month year totalBudget createdAt").sort({ createdAt: -1 }).limit(10),
-            Goal.find({ userId: id }).select("title targetAmount status createdAt updatedAt").sort({ createdAt: -1 }).limit(10),
-            ContactMessage.find({ email: user.email }).select("subject source createdAt").sort({ createdAt: -1 }).limit(10),
+            wants("transaction")
+                ? Transaction.find({ userId: id })
+                      .select("transactionType transactionAmount transactionCategory description paymentMethod transactionDate isRecurring createdAt")
+                      .sort({ createdAt: -1 })
+                      .limit(limit)
+                : [],
+            wants("budget")
+                ? Budget.find({ userId: id }).select("month year totalBudget categories createdAt").sort({ createdAt: -1 }).limit(limit)
+                : [],
+            wants("goal")
+                ? Goal.find({ userId: id })
+                      .select("title targetAmount currentAmount targetDate status priority createdAt updatedAt")
+                      .sort({ createdAt: -1 })
+                      .limit(limit)
+                : [],
+            wants("message")
+                ? ContactMessage.find({ email: user.email }).select("subject message source replies createdAt").sort({ createdAt: -1 }).limit(limit)
+                : [],
         ]);
 
+        const accountEvents = [];
+        if (wants("account")) {
+            accountEvents.push({ type: "account", action: "signup", title: "Created an account", timestamp: user.createdAt });
+            if (user.lastLoginAt) {
+                accountEvents.push({ type: "account", action: "login", title: "Signed in", detail: "Most recent sign-in", timestamp: user.lastLoginAt });
+            }
+        }
+
+        const monthName = (m, y) => new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+
         const events = [
-            { type: "signup", title: "Created account", timestamp: user.createdAt },
-            ...(user.lastLoginAt ? [{ type: "login", title: "Last logged in", timestamp: user.lastLoginAt }] : []),
+            ...accountEvents,
             ...transactions.map((t) => ({
                 type: "transaction",
-                title: `Added ${t.transactionType} · ${t.transactionCategory}`,
-                detail: t.description,
+                action: t.transactionType,
+                title: `Recorded ${t.transactionType === "income" ? "income" : "an expense"}`,
+                detail: t.description || undefined,
                 amount: t.transactionAmount,
-                transactionType: t.transactionType,
+                meta: {
+                    category: t.transactionCategory,
+                    paymentMethod: t.paymentMethod,
+                    transactionDate: t.transactionDate,
+                    recurring: t.isRecurring,
+                },
                 timestamp: t.createdAt,
             })),
             ...budgets.map((b) => ({
                 type: "budget",
-                title: `Set budget for ${b.month}/${b.year}`,
+                action: "created",
+                title: `Set a budget for ${monthName(b.month, b.year)}`,
                 amount: b.totalBudget,
+                meta: { categoryCount: b.categories?.length || 0 },
                 timestamp: b.createdAt,
             })),
-            ...goals.map((g) => ({
-                type: "goal",
-                title: `Created goal "${g.title}"`,
-                detail: g.status === "completed" ? "Completed" : undefined,
-                amount: g.targetAmount,
-                timestamp: g.createdAt,
-            })),
+            ...goals.flatMap((g) => {
+                const created = {
+                    type: "goal",
+                    action: "created",
+                    title: `Created goal "${g.title}"`,
+                    amount: g.targetAmount,
+                    meta: { priority: g.priority, targetDate: g.targetDate, status: g.status },
+                    timestamp: g.createdAt,
+                };
+                if (g.status !== "completed") return [created];
+                return [
+                    created,
+                    {
+                        type: "goal",
+                        action: "completed",
+                        title: `Completed goal "${g.title}"`,
+                        amount: g.currentAmount,
+                        timestamp: g.updatedAt,
+                    },
+                ];
+            }),
             ...messages.map((m) => ({
                 type: "message",
-                title: `Sent ${m.source === "feedback" ? "feedback" : "a message"}`,
+                action: m.source,
+                title: m.source === "feedback" ? "Sent feedback" : "Contacted support",
                 detail: m.subject,
+                meta: {
+                    preview: m.message?.slice(0, 160),
+                    replied: (m.replies?.length || 0) > 0,
+                },
                 timestamp: m.createdAt,
             })),
         ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -276,7 +332,7 @@ export const getUserActivityTimeline = async (req, res, next) => {
         return res.status(200).json({
             success: true,
             message: "User activity retrieved successfully",
-            events: events.slice(0, 50),
+            events: events.slice(0, limit),
             status: 200,
         });
     } catch (err) {
