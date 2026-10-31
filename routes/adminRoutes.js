@@ -4,6 +4,8 @@ import {
     getAdminOverview,
     getAllUsers,
     getUserById,
+    getUserTransactions,
+    getUserActivityTimeline,
     updateUserRole,
     updateUserStatus,
     deleteUser,
@@ -27,6 +29,8 @@ router.get("/activity", getUserActivity);
 
 router.get("/users", getAllUsers);
 router.get("/users/:id", getUserById);
+router.get("/users/:id/transactions", getUserTransactions);
+router.get("/users/:id/activity", getUserActivityTimeline);
 router.put("/users/:id/role", updateUserRole);
 router.put("/users/:id/status", updateUserStatus);
 router.delete("/users/:id", deleteUser);

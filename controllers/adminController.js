@@ -146,19 +146,137 @@ export const getUserById = async (req, res, next) => {
             });
         }
 
-        const [transactionCount, budgetCount, goalCount] = await Promise.all([
+        const [transactionCount, budgetCount, goalCount, totals] = await Promise.all([
             Transaction.countDocuments({ userId: id }),
             Budget.countDocuments({ userId: id }),
             Goal.countDocuments({ userId: id }),
+            Transaction.aggregate([
+                { $match: { userId: user._id } },
+                { $group: { _id: "$transactionType", total: { $sum: "$transactionAmount" } } },
+            ]),
         ]);
+
+        const totalIncome = totals.find((t) => t._id === "income")?.total || 0;
+        const totalExpense = totals.find((t) => t._id === "expense")?.total || 0;
 
         return res.status(200).json({
             success: true,
             message: "User retrieved successfully",
             user: {
                 ...user.toObject(),
-                stats: { transactionCount, budgetCount, goalCount },
+                stats: { transactionCount, budgetCount, goalCount, totalIncome, totalExpense },
             },
+            status: 200,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+// ========================================
+// A User's Transactions
+// ========================================
+
+export const getUserTransactions = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { type, page = 1, limit = 20 } = req.query;
+
+        const query = { userId: id };
+        if (type === "income" || type === "expense") query.transactionType = type;
+
+        const pageNumber = Math.max(Number(page) || 1, 1);
+        const limitNumber = Math.min(Math.max(Number(limit) || 20, 1), 100);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        const [transactions, totalTransactions] = await Promise.all([
+            Transaction.find(query).sort({ transactionDate: -1, createdAt: -1 }).skip(skip).limit(limitNumber),
+            Transaction.countDocuments(query),
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            message: "User transactions retrieved successfully",
+            pagination: {
+                currentPage: pageNumber,
+                totalPages: Math.ceil(totalTransactions / limitNumber),
+                totalTransactions,
+                limit: limitNumber,
+            },
+            transactions,
+            status: 200,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+// ========================================
+// A User's Activity Timeline
+// ========================================
+
+export const getUserActivityTimeline = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+
+        const user = await User.findById(id).select("username email createdAt lastLoginAt");
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+                status: 404,
+            });
+        }
+
+        // There's no dedicated activity log, so the timeline is built from
+        // the timestamps on everything the user has created.
+        const [transactions, budgets, goals, messages] = await Promise.all([
+            Transaction.find({ userId: id })
+                .select("transactionType transactionAmount transactionCategory description createdAt")
+                .sort({ createdAt: -1 })
+                .limit(30),
+            Budget.find({ userId: id }).select("month year totalBudget createdAt").sort({ createdAt: -1 }).limit(10),
+            Goal.find({ userId: id }).select("title targetAmount status createdAt updatedAt").sort({ createdAt: -1 }).limit(10),
+            ContactMessage.find({ email: user.email }).select("subject source createdAt").sort({ createdAt: -1 }).limit(10),
+        ]);
+
+        const events = [
+            { type: "signup", title: "Created account", timestamp: user.createdAt },
+            ...(user.lastLoginAt ? [{ type: "login", title: "Last logged in", timestamp: user.lastLoginAt }] : []),
+            ...transactions.map((t) => ({
+                type: "transaction",
+                title: `Added ${t.transactionType} · ${t.transactionCategory}`,
+                detail: t.description,
+                amount: t.transactionAmount,
+                transactionType: t.transactionType,
+                timestamp: t.createdAt,
+            })),
+            ...budgets.map((b) => ({
+                type: "budget",
+                title: `Set budget for ${b.month}/${b.year}`,
+                amount: b.totalBudget,
+                timestamp: b.createdAt,
+            })),
+            ...goals.map((g) => ({
+                type: "goal",
+                title: `Created goal "${g.title}"`,
+                detail: g.status === "completed" ? "Completed" : undefined,
+                amount: g.targetAmount,
+                timestamp: g.createdAt,
+            })),
+            ...messages.map((m) => ({
+                type: "message",
+                title: `Sent ${m.source === "feedback" ? "feedback" : "a message"}`,
+                detail: m.subject,
+                timestamp: m.createdAt,
+            })),
+        ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        return res.status(200).json({
+            success: true,
+            message: "User activity retrieved successfully",
+            events: events.slice(0, 50),
             status: 200,
         });
     } catch (err) {
@@ -534,19 +652,28 @@ export const replyToMessage = async (req, res, next) => {
             });
         }
 
-        await sendMail({
-            to: contactMessage.email,
-            subject: `Re: ${contactMessage.subject || "Your message to AI Financial Coach"}`,
-            text: `Hi ${contactMessage.name},\n\n${message}\n\n---\nYour original message:\n${contactMessage.message}`,
-            html: `
-                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
-                    <p>Hi ${contactMessage.name},</p>
-                    <p>${message.replace(/\n/g, "<br/>")}</p>
-                    <hr style="margin: 24px 0; border: none; border-top: 1px solid #e2e8f0;" />
-                    <p style="color: #64748b; font-size: 13px;"><strong>Your original message:</strong><br/>${contactMessage.message.replace(/\n/g, "<br/>")}</p>
-                </div>
-            `,
-        });
+        try {
+            await sendMail({
+                to: contactMessage.email,
+                subject: `Re: ${contactMessage.subject || "Your message to AI Financial Coach"}`,
+                text: `Hi ${contactMessage.name},\n\n${message}\n\n---\nYour original message:\n${contactMessage.message}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
+                        <p>Hi ${contactMessage.name},</p>
+                        <p>${message.replace(/\n/g, "<br/>")}</p>
+                        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e2e8f0;" />
+                        <p style="color: #64748b; font-size: 13px;"><strong>Your original message:</strong><br/>${contactMessage.message.replace(/\n/g, "<br/>")}</p>
+                    </div>
+                `,
+            });
+        } catch (mailErr) {
+            console.error("Reply email failed:", mailErr.message);
+            return res.status(502).json({
+                success: false,
+                message: "Couldn't send the reply email. Check the email settings on the server and try again.",
+                status: 502,
+            });
+        }
 
         contactMessage.replies.push({
             message: message.trim(),
