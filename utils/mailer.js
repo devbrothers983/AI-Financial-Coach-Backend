@@ -1,10 +1,13 @@
 import nodemailer from "nodemailer";
+import MailComposer from "nodemailer/lib/mail-composer/index.js";
+import { OAuth2Client } from "google-auth-library";
 
-// Render's free tier blocks outbound SMTP, so in production we send through
-// Brevo's HTTPS API when BREVO_API_KEY is set. Gmail SMTP stays as the
-// fallback for local development.
+// Render's free tier blocks outbound SMTP, so in production we send from the
+// same Gmail account through the Gmail API (HTTPS) when the GMAIL_* OAuth
+// credentials are set. Gmail SMTP stays as the fallback for local development.
 
 let transporter = null;
+let gmailClient = null;
 
 const getTransporter = () => {
     if (!transporter) {
@@ -23,38 +26,39 @@ const getTransporter = () => {
     return transporter;
 };
 
-const sendWithBrevo = async ({ to, subject, text, html }) => {
-    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+const useGmailApi = () =>
+    Boolean(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN);
+
+const getGmailClient = () => {
+    if (!gmailClient) {
+        gmailClient = new OAuth2Client(process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET);
+        gmailClient.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
+    }
+    return gmailClient;
+};
+
+const sendWithGmailApi = async (options) => {
+    const message = await new MailComposer({
+        from: `"AI Financial Coach" <${process.env.EMAIL_USER}>`,
+        ...options,
+    })
+        .compile()
+        .build();
+
+    // google-auth-library refreshes the access token and adds the auth header
+    const response = await getGmailClient().request({
+        url: "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
         method: "POST",
-        headers: {
-            "api-key": process.env.BREVO_API_KEY,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-        },
-        body: JSON.stringify({
-            sender: {
-                name: "AI Financial Coach",
-                email: process.env.MAIL_FROM || process.env.EMAIL_USER,
-            },
-            to: [{ email: to }],
-            subject,
-            textContent: text,
-            htmlContent: html,
-        }),
-        signal: AbortSignal.timeout(15000),
+        data: { raw: message.toString("base64url") },
+        timeout: 15000,
     });
 
-    if (!response.ok) {
-        const details = await response.text();
-        throw new Error(`Brevo email failed (${response.status}): ${details}`);
-    }
-
-    return response.json();
+    return response.data;
 };
 
 export const sendMail = (options) => {
-    if (process.env.BREVO_API_KEY) {
-        return sendWithBrevo(options);
+    if (useGmailApi()) {
+        return sendWithGmailApi(options);
     }
 
     return getTransporter().sendMail({
