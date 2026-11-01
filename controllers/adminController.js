@@ -1033,3 +1033,81 @@ export const exportUserTransactions = async (req, res, next) => {
         next(err);
     }
 };
+
+// ========================================
+// Bulk User Actions
+// ========================================
+
+const BULK_ACTIONS = ["activate", "deactivate", "delete"];
+const MAX_BULK = 200;
+
+export const bulkUserAction = async (req, res, next) => {
+    try {
+        const { ids, action } = req.body;
+
+        if (!BULK_ACTIONS.includes(action)) {
+            return res.status(400).json({
+                success: false,
+                message: `action must be one of: ${BULK_ACTIONS.join(", ")}`,
+                status: 400,
+            });
+        }
+
+        if (!Array.isArray(ids) || ids.length === 0 || ids.length > MAX_BULK) {
+            return res.status(400).json({
+                success: false,
+                message: `Select between 1 and ${MAX_BULK} users`,
+                status: 400,
+            });
+        }
+
+        // never act on your own account
+        const selfId = req.user._id.toString();
+        const targetIds = [...new Set(ids.map(String))].filter((id) => id !== selfId);
+        const users = await User.find({ _id: { $in: targetIds } }).select("username email role isActive").lean();
+
+        if (!users.length) {
+            return res.status(400).json({
+                success: false,
+                message: "None of the selected users can be changed",
+                status: 400,
+            });
+        }
+
+        const userIds = users.map((u) => u._id);
+
+        if (action === "delete") {
+            await Promise.all([
+                User.deleteMany({ _id: { $in: userIds } }),
+                Transaction.deleteMany({ userId: { $in: userIds } }),
+                Budget.deleteMany({ userId: { $in: userIds } }),
+                Goal.deleteMany({ userId: { $in: userIds } }),
+                Notification.deleteMany({ userId: { $in: userIds } }),
+            ]);
+        } else {
+            await User.updateMany({ _id: { $in: userIds } }, { isActive: action === "activate" });
+        }
+
+        const verb = { activate: "Reactivated", deactivate: "Deactivated", delete: "Deleted" }[action];
+
+        users.forEach((u) =>
+            logActivity(req, {
+                action: action === "delete" ? "admin.user_delete" : "admin.user_status",
+                description: `${verb} ${u.username}'s account (bulk action)`,
+                targetUserId: u._id,
+                metadata: { targetUsername: u.username, targetEmail: u.email, bulk: true, ...(action !== "delete" && { isActive: action === "activate" }) },
+            })
+        );
+
+        const skippedSelf = ids.map(String).includes(selfId);
+
+        return res.status(200).json({
+            success: true,
+            message: `${verb} ${users.length} ${users.length === 1 ? "user" : "users"}${skippedSelf ? " (your own account was skipped)" : ""}`,
+            affected: users.length,
+            status: 200,
+        });
+    } catch (err) {
+        next(err);
+    }
+};

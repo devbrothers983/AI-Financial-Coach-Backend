@@ -19,6 +19,7 @@ import {
     getUnreadMessageCount,
     exportUsers,
     exportUserTransactions,
+    bulkUserAction,
 } from "../controllers/adminController.js";
 
 import {
@@ -46,6 +47,7 @@ router.delete("/announcements/:id", deleteAnnouncement);
 
 router.get("/users", getAllUsers);
 router.get("/users/export", exportUsers);
+router.post("/users/bulk", bulkUserAction);
 router.get("/users/:id/transactions/export", exportUserTransactions);
 router.get("/users/:id", getUserById);
 router.get("/users/:id/transactions", getUserTransactions);
