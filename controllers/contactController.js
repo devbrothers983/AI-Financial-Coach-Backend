@@ -1,6 +1,7 @@
 import { sendMail } from "../utils/mailer.js";
 import { toTitleCase } from "../utils/formatText.js";
 import ContactMessage from "../models/ContactMessage.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 export const sendContactMessage = async (req, res, next) => {
     try {
@@ -25,7 +26,8 @@ export const sendContactMessage = async (req, res, next) => {
 
         name = toTitleCase(name);
 
-        await ContactMessage.create({
+        const contactMessage = await ContactMessage.create({
+            userId: req.user?._id || null,
             name,
             email,
             subject: subject || "General",
@@ -33,7 +35,18 @@ export const sendContactMessage = async (req, res, next) => {
             source: source === "feedback" ? "feedback" : "contact",
         });
 
-        await sendMail({
+        if (req.user) {
+            logActivity(req, {
+                action: "message.send",
+                description: `Sent ${contactMessage.source === "feedback" ? "feedback" : "a support message"}: "${contactMessage.subject}"`,
+                targetId: contactMessage._id,
+                metadata: { subject: contactMessage.subject, source: contactMessage.source },
+            });
+        }
+
+        // The message is already saved, so a failed notification email
+        // shouldn't make the sender think it wasn't delivered.
+        sendMail({
             to: process.env.EMAIL_USER,
             replyTo: email,
             subject: `[AI Financial Coach] ${subject || "New contact message"}`,
@@ -44,11 +57,14 @@ export const sendContactMessage = async (req, res, next) => {
                 <p><strong>Subject:</strong> ${subject || "General"}</p>
                 <p>${message.replace(/\n/g, "<br/>")}</p>
             `,
+        }).catch((err) => {
+            console.error("Failed to send contact notification:", err.message);
         });
 
         return res.status(200).json({
             success: true,
             message: "Message sent successfully",
+            data: contactMessage,
             status: 200,
         });
 

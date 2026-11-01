@@ -16,6 +16,7 @@ import {
     replyToMessage,
     deleteMessage,
     getActivityLogs,
+    getUnreadMessageCount,
 } from "../controllers/adminController.js";
 
 import { authMiddleware, roleMiddleware } from "../middlewares/authMiddleware.js";
@@ -38,6 +39,7 @@ router.put("/users/:id/status", updateUserStatus);
 router.delete("/users/:id", deleteUser);
 
 router.get("/messages", getAllMessages);
+router.get("/messages/unread-count", getUnreadMessageCount);
 router.put("/messages/:id/read", updateMessageReadStatus);
 router.post("/messages/:id/reply", replyToMessage);
 router.delete("/messages/:id", deleteMessage);

@@ -48,6 +48,24 @@ export const authMiddleware = async (req, res, next) => {
 
 
 
+// Sets req.user when a valid token is sent, but never rejects the request;
+// for routes like the contact form that work signed in or not.
+export const optionalAuthMiddleware = async (req, res, next) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith("Bearer ")) {
+            const decoded = jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
+            const user = await User.findById(decoded.userId);
+            if (user?.isActive) req.user = user;
+        }
+    } catch {
+        // invalid or expired token: carry on as a guest
+    }
+    next();
+};
+
+
+
 export const roleMiddleware = (role) => {
     return (req, res, next) => {
         if (req.user.role !== role) {

@@ -697,7 +697,7 @@ export const getAllMessages = async (req, res, next) => {
         const skip = (pageNumber - 1) * limitNumber;
 
         const [messages, totalMessages, unreadCount] = await Promise.all([
-            ContactMessage.find(query).sort({ createdAt: -1 }).skip(skip).limit(limitNumber),
+            ContactMessage.find(query).sort({ lastActivityAt: -1, createdAt: -1 }).skip(skip).limit(limitNumber),
             ContactMessage.countDocuments(query),
             ContactMessage.countDocuments({ isRead: false }),
         ]);
@@ -778,37 +778,25 @@ export const replyToMessage = async (req, res, next) => {
             });
         }
 
-        try {
-            await sendMail({
-                to: contactMessage.email,
-                subject: `Re: ${contactMessage.subject || "Your message to AI Financial Coach"}`,
-                text: `Hi ${contactMessage.name},\n\n${message}\n\n---\nYour original message:\n${contactMessage.message}`,
-                html: `
-                    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
-                        <p>Hi ${contactMessage.name},</p>
-                        <p>${message.replace(/\n/g, "<br/>")}</p>
-                        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e2e8f0;" />
-                        <p style="color: #64748b; font-size: 13px;"><strong>Your original message:</strong><br/>${contactMessage.message.replace(/\n/g, "<br/>")}</p>
-                    </div>
-                `,
-            });
-        } catch (mailErr) {
-            console.error("Reply email failed:", mailErr.message);
-            return res.status(502).json({
-                success: false,
-                message: "Couldn't send the reply email. Check the email settings on the server and try again.",
-                status: 502,
-            });
-        }
-
+        const now = new Date();
         contactMessage.replies.push({
             message: message.trim(),
             repliedBy: req.user.username,
+            from: "admin",
+            createdAt: now,
         });
         contactMessage.isRead = true;
+        contactMessage.lastActivityAt = now;
+
+        const recipient = contactMessage.userId
+            ? { _id: contactMessage.userId }
+            : await User.findOne({ email: contactMessage.email }).select("_id");
+        if (recipient && !contactMessage.userId) contactMessage.userId = recipient._id;
+
+        // Saved first so the reply is never lost; users with an account also
+        // see it in their dashboard inbox, so the email is a notification.
         await contactMessage.save();
 
-        const recipient = await User.findOne({ email: contactMessage.email }).select("_id");
         logActivity(req, {
             action: "admin.message_reply",
             description: `Replied to ${contactMessage.name}'s message "${contactMessage.subject}"`,
@@ -817,9 +805,45 @@ export const replyToMessage = async (req, res, next) => {
             metadata: { targetEmail: contactMessage.email, subject: contactMessage.subject },
         });
 
+        const frontendUrl = (process.env.FRONTEND_URL || "").split(",")[0].trim().replace(/\/+$/, "");
+        const inboxLink = recipient && frontendUrl ? `${frontendUrl}/dashboard/inbox?thread=${contactMessage._id}` : null;
+
+        let emailSent = true;
+        try {
+            await sendMail({
+                to: contactMessage.email,
+                subject: `Re: ${contactMessage.subject || "Your message to AI Financial Coach"}`,
+                text: `Hi ${contactMessage.name},\n\n${message}${inboxLink ? `\n\nView or reply in your dashboard: ${inboxLink}` : ""}\n\n---\nYour original message:\n${contactMessage.message}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
+                        <p>Hi ${contactMessage.name},</p>
+                        <p>${message.replace(/\n/g, "<br/>")}</p>
+                        ${inboxLink ? `<p style="margin: 24px 0;"><a href="${inboxLink}" style="background: #4f46e5; color: #ffffff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600;">View or reply in your dashboard</a></p>` : ""}
+                        <hr style="margin: 24px 0; border: none; border-top: 1px solid #e2e8f0;" />
+                        <p style="color: #64748b; font-size: 13px;"><strong>Your original message:</strong><br/>${contactMessage.message.replace(/\n/g, "<br/>")}</p>
+                    </div>
+                `,
+            });
+        } catch (mailErr) {
+            console.error("Reply email failed:", mailErr.message);
+            emailSent = false;
+        }
+
+        if (!emailSent && !recipient) {
+            return res.status(502).json({
+                success: false,
+                message: "Reply saved, but the email couldn't be sent and this person has no account to see it in. Check the email settings on the server.",
+                data: contactMessage,
+                status: 502,
+            });
+        }
+
         return res.status(200).json({
             success: true,
-            message: "Reply sent successfully",
+            message: emailSent
+                ? "Reply sent successfully"
+                : "Reply saved and shown in the user's inbox, but the email couldn't be sent",
+            emailSent,
             data: contactMessage,
             status: 200,
         });
@@ -911,6 +935,24 @@ export const getActivityLogs = async (req, res, next) => {
                 adminActions: countFor((a) => a.startsWith("admin.")),
             },
             logs: logs.map((l) => ({ ...l, device: describeDevice(l.userAgent) })),
+            status: 200,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+// ========================================
+// Unread Messages Count (sidebar badge)
+// ========================================
+
+export const getUnreadMessageCount = async (req, res, next) => {
+    try {
+        const unreadCount = await ContactMessage.countDocuments({ isRead: false });
+
+        return res.status(200).json({
+            success: true,
+            unreadCount,
             status: 200,
         });
     } catch (err) {
