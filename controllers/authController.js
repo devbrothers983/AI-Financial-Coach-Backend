@@ -11,14 +11,7 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 
-const generateToken = (id) => {
-
-    return jwt.sign(
-        { userId: id },
-        process.env.JWT_SECRET,
-        { expiresIn: '1h' }
-    )
-}
+import { generateToken } from '../utils/token.js';
 
 
 // register user
@@ -140,7 +133,7 @@ export const loginUser = async (req, res, next) => {
 
         logActivity(req, { action: "auth.login", description: "Signed in with email", actor: user, metadata: { method: "email" } });
 
-        const token = generateToken(user._id);
+        const token = generateToken(user);
 
         res.status(200).json({
             success: true,
@@ -231,7 +224,7 @@ export const googleAuth = async (req, res, next) => {
         }
         logActivity(req, { action: "auth.login", description: "Signed in with Google", actor: user, metadata: { method: "google" } });
 
-        const token = generateToken(user._id);
+        const token = generateToken(user);
 
         res.status(200).json({
             success: true,
@@ -357,6 +350,8 @@ export const resetPassword = async (req, res, next) => {
         user.password = await bcrypt.hash(password, 10);
         user.resetPasswordOtp = undefined;
         user.resetPasswordOtpExpires = undefined;
+        // a password reset signs out every existing session
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
         await user.save();
 
         logActivity(req, { action: "auth.password_reset", description: "Reset password with an email code", actor: user });

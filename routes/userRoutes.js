@@ -5,6 +5,8 @@ import {
     changePassword,
     uploadAvatar,
     deleteAvatar,
+    getLoginHistory,
+    logoutAllDevices,
 } from "../controllers/userController.js";
 import { authMiddleware } from "../middlewares/authMiddleware.js";
 import { upload } from "../middlewares/uploadMiddleware.js";
@@ -16,5 +18,7 @@ router.put("/me", authMiddleware, updateProfile);
 router.put("/me/password", authMiddleware, changePassword);
 router.post("/me/avatar", authMiddleware, upload.single("avatar"), uploadAvatar);
 router.delete("/me/avatar", authMiddleware, deleteAvatar);
+router.get("/me/login-history", authMiddleware, getLoginHistory);
+router.post("/me/logout-all", authMiddleware, logoutAllDevices);
 
 export default router;

@@ -2,7 +2,19 @@ import bcrypt from "bcrypt";
 import User from "../models/User.js";
 import { getCloudinary } from "../config/cloudinary.js";
 import { toTitleCase } from "../utils/formatText.js";
-import { logActivity } from "../utils/activityLogger.js";
+import { logActivity, describeDevice } from "../utils/activityLogger.js";
+import { notify } from "../utils/notify.js";
+import { generateToken } from "../utils/token.js";
+import ActivityLog from "../models/ActivityLog.js";
+
+const LOGIN_HISTORY_ACTIONS = [
+    "auth.login",
+    "auth.login_failed",
+    "auth.login_blocked",
+    "auth.password_reset",
+    "auth.logout_all",
+    "profile.password_change",
+];
 
 // Whitelist exactly what the client is allowed to see, rather than trusting
 // whatever fields happen to exist on the document (e.g. stale fields left
@@ -172,6 +184,8 @@ export const changePassword = async (req, res, next) => {
 
         const hadPassword = Boolean(user.password);
         user.password = await bcrypt.hash(newPassword, 10);
+        // signs out other devices; this one gets a fresh token below
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
         await user.save();
 
         logActivity(req, {
@@ -179,9 +193,18 @@ export const changePassword = async (req, res, next) => {
             description: hadPassword ? "Changed password" : "Set a password for the first time",
         });
 
+        notify(user._id, {
+            type: "security",
+            level: "warning",
+            title: hadPassword ? "Your password was changed" : "A password was added to your account",
+            body: "Other devices have been signed out. If this wasn't you, reset your password right away.",
+            link: "/dashboard/settings",
+        });
+
         return res.status(200).json({
             success: true,
             message: "Password updated successfully",
+            token: generateToken(user),
             status: 200,
         });
 
@@ -254,6 +277,70 @@ export const deleteAvatar = async (req, res, next) => {
         return res.status(200).json({
             success: true,
             message: "Profile photo removed",
+            status: 200,
+        });
+
+    } catch (err) {
+        next(err);
+    }
+};
+
+
+// recent sign-ins and security events for the signed-in user
+export const getLoginHistory = async (req, res, next) => {
+    try {
+        const logs = await ActivityLog.find({ userId: req.user._id, action: { $in: LOGIN_HISTORY_ACTIONS } })
+            .select("action description ip userAgent createdAt metadata")
+            .sort({ createdAt: -1 })
+            .limit(30)
+            .lean();
+
+        // the newest real sign-in from this browser is very likely this session
+        const currentAgent = req.headers["user-agent"] || "";
+        const currentIndex = logs.findIndex((l) => l.action === "auth.login" && l.userAgent && l.userAgent === currentAgent);
+
+        return res.status(200).json({
+            success: true,
+            message: "Login history retrieved successfully",
+            history: logs.map((l, i) => ({
+                _id: l._id,
+                action: l.action,
+                description: l.description,
+                device: describeDevice(l.userAgent),
+                ip: l.ip,
+                method: l.metadata?.method,
+                isCurrent: i === currentIndex,
+                createdAt: l.createdAt,
+            })),
+            status: 200,
+        });
+
+    } catch (err) {
+        next(err);
+    }
+};
+
+
+// signs out every device, then hands this device a fresh token
+export const logoutAllDevices = async (req, res, next) => {
+    try {
+
+        const user = await User.findByIdAndUpdate(req.user._id, { $inc: { tokenVersion: 1 } }, { new: true });
+
+        logActivity(req, { action: "auth.logout_all", description: "Signed out of all other devices" });
+
+        notify(user._id, {
+            type: "security",
+            level: "info",
+            title: "Signed out of all other devices",
+            body: "Any other browser or phone signed in to your account will need to sign in again.",
+            link: "/dashboard/settings",
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Signed out of all other devices",
+            token: generateToken(user),
             status: 200,
         });
 

@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import { isTokenCurrent } from "../utils/token.js";
 
 export const authMiddleware = async (req, res, next) => {
     try {
@@ -30,6 +31,14 @@ export const authMiddleware = async (req, res, next) => {
             });
         }
 
+        if (!isTokenCurrent(decoded, user)) {
+            return res.status(401).json({
+                success: false,
+                message: "Your session has ended. Please sign in again.",
+                status: 401,
+            });
+        }
+
         if (!user.isActive) {
             return res.status(403).json({
                 success: false,
@@ -56,7 +65,7 @@ export const optionalAuthMiddleware = async (req, res, next) => {
         if (authHeader?.startsWith("Bearer ")) {
             const decoded = jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
             const user = await User.findById(decoded.userId);
-            if (user?.isActive) req.user = user;
+            if (user?.isActive && isTokenCurrent(decoded, user)) req.user = user;
         }
     } catch {
         // invalid or expired token: carry on as a guest

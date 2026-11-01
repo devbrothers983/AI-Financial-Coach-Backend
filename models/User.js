@@ -63,6 +63,12 @@ const userSchema = new mongoose.Schema({
         select: false,
     },
 
+    // Stored in every login token; bumping it signs the user out everywhere
+    tokenVersion: {
+        type: Number,
+        default: 0,
+    },
+
 
     role: {
         type: String,
