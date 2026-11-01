@@ -19,6 +19,13 @@ import {
     getUnreadMessageCount,
 } from "../controllers/adminController.js";
 
+import {
+    getAnnouncements,
+    createAnnouncement,
+    updateAnnouncement,
+    deleteAnnouncement,
+} from "../controllers/announcementController.js";
+
 import { authMiddleware, roleMiddleware } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
@@ -29,6 +36,11 @@ router.get("/overview", getAdminOverview);
 router.get("/reports", getAdminReports);
 router.get("/activity", getUserActivity);
 router.get("/logs", getActivityLogs);
+
+router.get("/announcements", getAnnouncements);
+router.post("/announcements", createAnnouncement);
+router.put("/announcements/:id", updateAnnouncement);
+router.delete("/announcements/:id", deleteAnnouncement);
 
 router.get("/users", getAllUsers);
 router.get("/users/:id", getUserById);
