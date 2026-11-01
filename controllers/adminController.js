@@ -6,6 +6,7 @@ import ContactMessage from "../models/ContactMessage.js";
 import ActivityLog from "../models/ActivityLog.js";
 import { sendMail } from "../utils/mailer.js";
 import { logActivity, describeDevice } from "../utils/activityLogger.js";
+import { notify } from "../utils/notify.js";
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -804,6 +805,16 @@ export const replyToMessage = async (req, res, next) => {
             targetId: contactMessage._id,
             metadata: { targetEmail: contactMessage.email, subject: contactMessage.subject },
         });
+
+        if (recipient) {
+            notify(recipient._id, {
+                type: "message_reply",
+                level: "info",
+                title: "New reply from support",
+                body: `Re: ${contactMessage.subject}`,
+                link: `/dashboard/inbox?thread=${contactMessage._id}`,
+            });
+        }
 
         const frontendUrl = (process.env.FRONTEND_URL || "").split(",")[0].trim().replace(/\/+$/, "");
         const inboxLink = recipient && frontendUrl ? `${frontendUrl}/dashboard/inbox?thread=${contactMessage._id}` : null;
