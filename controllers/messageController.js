@@ -79,11 +79,14 @@ export const getMyUnreadCount = async (req, res, next) => {
 
 export const getMyMessageById = async (req, res, next) => {
     try {
-        const message = await ContactMessage.findOneAndUpdate(
-            { _id: req.params.id, ...ownQuery(req.user) },
-            { userLastReadAt: new Date() },
-            { new: true, timestamps: false }
-        ).lean();
+        // opening marks it read for the user, but not when an admin is viewing as them
+        const message = req.impersonator
+            ? await ContactMessage.findOne({ _id: req.params.id, ...ownQuery(req.user) }).lean()
+            : await ContactMessage.findOneAndUpdate(
+                  { _id: req.params.id, ...ownQuery(req.user) },
+                  { userLastReadAt: new Date() },
+                  { new: true, timestamps: false }
+              ).lean();
 
         if (!message) {
             return res.status(404).json({

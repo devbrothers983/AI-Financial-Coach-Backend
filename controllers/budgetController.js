@@ -211,7 +211,8 @@ export const getAllBudgets = async (req, res, next) => {
 
         } = req.query;
 
-        const sweptGoals = await sweepCompletedBudgets(req.user._id);
+        // a read-only admin view must not move the user's money around
+        const sweptGoals = req.impersonator ? [] : await sweepCompletedBudgets(req.user._id);
 
         const query = {
             userId: req.user._id,

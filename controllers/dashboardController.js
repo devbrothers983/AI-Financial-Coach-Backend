@@ -21,7 +21,8 @@ export const getDashboardOverview = async (
 
 
         // Roll any completed months' leftover budget into linked goals
-        await sweepCompletedBudgets(req.user._id);
+        // a read-only admin view must not move the user's money around
+        if (!req.impersonator) await sweepCompletedBudgets(req.user._id);
 
 
         // Current date

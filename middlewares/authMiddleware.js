@@ -47,6 +47,27 @@ export const authMiddleware = async (req, res, next) => {
             });
         }
 
+        // Admin "view as user" token: the admin must still be an active admin,
+        // and nothing can be changed through it.
+        if (decoded.imp) {
+            const admin = await User.findById(decoded.imp).select("username role isActive");
+            if (!admin || admin.role !== "admin" || admin.isActive === false) {
+                return res.status(401).json({
+                    success: false,
+                    message: "This view-only session is no longer valid",
+                    status: 401,
+                });
+            }
+            if (req.method !== "GET") {
+                return res.status(403).json({
+                    success: false,
+                    message: "This is a read-only view. Changes can't be made while viewing as a user.",
+                    status: 403,
+                });
+            }
+            req.impersonator = admin;
+        }
+
         req.user = user;
 
         next();
@@ -65,7 +86,8 @@ export const optionalAuthMiddleware = async (req, res, next) => {
         if (authHeader?.startsWith("Bearer ")) {
             const decoded = jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
             const user = await User.findById(decoded.userId);
-            if (user?.isActive && isTokenCurrent(decoded, user)) req.user = user;
+            // view-as tokens never act as the user here (e.g. sending a contact message)
+            if (user?.isActive && isTokenCurrent(decoded, user) && !decoded.imp) req.user = user;
         }
     } catch {
         // invalid or expired token: carry on as a guest

@@ -8,6 +8,7 @@ import Notification from "../models/Notification.js";
 import { sendMail } from "../utils/mailer.js";
 import { logActivity, describeDevice } from "../utils/activityLogger.js";
 import { notify } from "../utils/notify.js";
+import { generateViewAsToken, VIEW_AS_MINUTES } from "../utils/token.js";
 import { toCsv, sendCsv, USER_COLUMNS, TRANSACTION_COLUMNS, todayStamp } from "../utils/csv.js";
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1172,6 +1173,60 @@ export const getAdminGrowth = async (req, res, next) => {
             success: true,
             message: "Growth data retrieved successfully",
             weeks: series,
+            status: 200,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+// ========================================
+// Read-only "view as user"
+// ========================================
+
+export const createViewAsToken = async (req, res, next) => {
+    try {
+        const target = await User.findById(req.params.id).select("username email role isActive tokenVersion");
+
+        if (!target) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+                status: 404,
+            });
+        }
+
+        if (target.role === "admin") {
+            return res.status(400).json({
+                success: false,
+                message: "Admin accounts can't be viewed this way",
+                status: 400,
+            });
+        }
+
+        if (target.isActive === false) {
+            return res.status(400).json({
+                success: false,
+                message: "Reactivate this account to view it",
+                status: 400,
+            });
+        }
+
+        const token = generateViewAsToken(target, req.user);
+
+        logActivity(req, {
+            action: "admin.view_as",
+            description: `Viewed ${target.username}'s dashboard (read-only)`,
+            targetUserId: target._id,
+            metadata: { targetUsername: target.username, targetEmail: target.email },
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Read-only view ready",
+            token,
+            user: { _id: target._id, username: target.username, email: target.email, role: target.role },
+            expiresInMinutes: VIEW_AS_MINUTES,
             status: 200,
         });
     } catch (err) {
