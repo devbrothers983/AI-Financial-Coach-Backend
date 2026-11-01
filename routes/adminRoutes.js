@@ -20,6 +20,7 @@ import {
     exportUsers,
     exportUserTransactions,
     bulkUserAction,
+    getAdminGrowth,
 } from "../controllers/adminController.js";
 
 import {
@@ -36,6 +37,7 @@ const router = express.Router();
 router.use(authMiddleware, roleMiddleware("admin"));
 
 router.get("/overview", getAdminOverview);
+router.get("/growth", getAdminGrowth);
 router.get("/reports", getAdminReports);
 router.get("/activity", getUserActivity);
 router.get("/logs", getActivityLogs);

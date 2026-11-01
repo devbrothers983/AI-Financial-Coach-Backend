@@ -1111,3 +1111,70 @@ export const bulkUserAction = async (req, res, next) => {
         next(err);
     }
 };
+
+// ========================================
+// Growth (weekly series for the overview charts)
+// ========================================
+
+// Monday 00:00 UTC of the week containing `date`
+const startOfWeekUTC = (date) => {
+    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const daysSinceMonday = (d.getUTCDay() + 6) % 7;
+    d.setUTCDate(d.getUTCDate() - daysSinceMonday);
+    return d;
+};
+
+const weekTrunc = (field) => ({ $dateTrunc: { date: field, unit: "week", startOfWeek: "monday", timezone: "UTC" } });
+
+export const getAdminGrowth = async (req, res, next) => {
+    try {
+        const weeks = Math.min(Math.max(Number(req.query.weeks) || 12, 4), 52);
+
+        const thisWeek = startOfWeekUTC(new Date());
+        const start = new Date(thisWeek);
+        start.setUTCDate(start.getUTCDate() - (weeks - 1) * 7);
+
+        const [signups, active, coach] = await Promise.all([
+            User.aggregate([
+                { $match: { createdAt: { $gte: start } } },
+                { $group: { _id: weekTrunc("$createdAt"), count: { $sum: 1 } } },
+            ]),
+            // distinct people who did anything that week (signed in, saved data, used the coach...)
+            ActivityLog.aggregate([
+                { $match: { createdAt: { $gte: start }, userId: { $ne: null }, role: "user" } },
+                { $group: { _id: { week: weekTrunc("$createdAt"), user: "$userId" } } },
+                { $group: { _id: "$_id.week", count: { $sum: 1 } } },
+            ]),
+            ActivityLog.aggregate([
+                { $match: { createdAt: { $gte: start }, action: "coach.ask" } },
+                { $group: { _id: weekTrunc("$createdAt"), count: { $sum: 1 } } },
+            ]),
+        ]);
+
+        const byWeek = (rows) => Object.fromEntries(rows.map((r) => [new Date(r._id).toISOString(), r.count]));
+        const signupMap = byWeek(signups);
+        const activeMap = byWeek(active);
+        const coachMap = byWeek(coach);
+
+        const series = Array.from({ length: weeks }, (_, i) => {
+            const weekStart = new Date(start);
+            weekStart.setUTCDate(weekStart.getUTCDate() + i * 7);
+            const key = weekStart.toISOString();
+            return {
+                weekStart: key,
+                signups: signupMap[key] || 0,
+                activeUsers: activeMap[key] || 0,
+                coachUses: coachMap[key] || 0,
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Growth data retrieved successfully",
+            weeks: series,
+            status: 200,
+        });
+    } catch (err) {
+        next(err);
+    }
+};

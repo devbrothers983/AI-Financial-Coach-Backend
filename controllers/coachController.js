@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Transaction from "../models/Transaction.js";
 import Budget from "../models/Budget.js";
 import Goal from "../models/Goal.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 
 // ========================================
@@ -377,6 +378,13 @@ export const checkAffordability = async (
 
         const aiResult =
             await aiResponse.json();
+
+        // counted in the admin overview's AI coach usage chart
+        logActivity(req, {
+            action: "coach.ask",
+            description: `Asked the AI coach about "${purchaseName}" (${purchasePrice})`,
+            metadata: { purchaseName, purchasePrice },
+        });
 
 
         // ========================================
