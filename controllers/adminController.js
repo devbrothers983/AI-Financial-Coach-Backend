@@ -4,6 +4,7 @@ import Budget from "../models/Budget.js";
 import Goal from "../models/Goal.js";
 import ContactMessage from "../models/ContactMessage.js";
 import ActivityLog from "../models/ActivityLog.js";
+import Notification from "../models/Notification.js";
 import { sendMail } from "../utils/mailer.js";
 import { logActivity, describeDevice } from "../utils/activityLogger.js";
 import { notify } from "../utils/notify.js";
@@ -526,6 +527,7 @@ export const deleteUser = async (req, res, next) => {
             Transaction.deleteMany({ userId: id }),
             Budget.deleteMany({ userId: id }),
             Goal.deleteMany({ userId: id }),
+            Notification.deleteMany({ userId: id }),
         ]);
 
         logActivity(req, {

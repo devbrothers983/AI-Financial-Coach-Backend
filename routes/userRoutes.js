@@ -7,6 +7,7 @@ import {
     deleteAvatar,
     getLoginHistory,
     logoutAllDevices,
+    deleteMyAccount,
 } from "../controllers/userController.js";
 import { authMiddleware } from "../middlewares/authMiddleware.js";
 import { upload } from "../middlewares/uploadMiddleware.js";
@@ -20,5 +21,6 @@ router.post("/me/avatar", authMiddleware, upload.single("avatar"), uploadAvatar)
 router.delete("/me/avatar", authMiddleware, deleteAvatar);
 router.get("/me/login-history", authMiddleware, getLoginHistory);
 router.post("/me/logout-all", authMiddleware, logoutAllDevices);
+router.delete("/me", authMiddleware, deleteMyAccount);
 
 export default router;

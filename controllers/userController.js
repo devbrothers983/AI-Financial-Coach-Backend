@@ -6,6 +6,13 @@ import { logActivity, describeDevice } from "../utils/activityLogger.js";
 import { notify } from "../utils/notify.js";
 import { generateToken } from "../utils/token.js";
 import ActivityLog from "../models/ActivityLog.js";
+import Transaction from "../models/Transaction.js";
+import Budget from "../models/Budget.js";
+import Goal from "../models/Goal.js";
+import Notification from "../models/Notification.js";
+import ContactMessage from "../models/ContactMessage.js";
+import Announcement from "../models/Announcement.js";
+import { sendMail } from "../utils/mailer.js";
 
 const LOGIN_HISTORY_ACTIONS = [
     "auth.login",
@@ -341,6 +348,95 @@ export const logoutAllDevices = async (req, res, next) => {
             success: true,
             message: "Signed out of all other devices",
             token: generateToken(user),
+            status: 200,
+        });
+
+    } catch (err) {
+        next(err);
+    }
+};
+
+
+// permanently delete the signed-in user's account and everything in it
+export const deleteMyAccount = async (req, res, next) => {
+    try {
+
+        const { password, confirmation } = req.body;
+
+        const user = await User.findById(req.user._id).select("+password +avatarPublicId");
+
+        // accounts with a password confirm with it; Google-only accounts type DELETE
+        if (user.password) {
+            if (!password || !(await bcrypt.compare(password, user.password))) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Password is incorrect",
+                    status: 400,
+                });
+            }
+        } else if (confirmation !== "DELETE") {
+            return res.status(400).json({
+                success: false,
+                message: 'Type DELETE to confirm',
+                status: 400,
+            });
+        }
+
+        if (user.role === "admin") {
+            const otherAdmins = await User.countDocuments({ role: "admin", _id: { $ne: user._id } });
+            if (!otherAdmins) {
+                return res.status(400).json({
+                    success: false,
+                    message: "You're the only admin. Make someone else an admin before deleting your account.",
+                    status: 400,
+                });
+            }
+        }
+
+        const userId = user._id;
+
+        await Promise.all([
+            Transaction.deleteMany({ userId }),
+            Budget.deleteMany({ userId }),
+            Goal.deleteMany({ userId }),
+            Notification.deleteMany({ userId }),
+            ContactMessage.deleteMany({ $or: [{ userId }, { email: user.email }] }),
+            Announcement.updateMany({}, { $pull: { dismissedBy: userId } }),
+        ]);
+
+        if (user.avatarPublicId) {
+            getCloudinary().uploader.destroy(user.avatarPublicId).catch((err) => {
+                console.error("Failed to delete avatar:", err.message);
+            });
+        }
+
+        await User.deleteOne({ _id: userId });
+
+        // the audit trail keeps a record that the account existed and was closed
+        logActivity(req, {
+            action: "auth.account_delete",
+            description: "Deleted their own account and data",
+            actor: user,
+            metadata: { email: user.email },
+        });
+
+        sendMail({
+            to: user.email,
+            subject: "Your AI Financial Coach account has been deleted",
+            text: `Hi ${user.username},\n\nYour account and all of its data have been permanently deleted. We're sorry to see you go — you're always welcome back.\n\nThe AI Financial Coach Team`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
+                    <p>Hi ${user.username},</p>
+                    <p>Your account and all of its data have been permanently deleted.</p>
+                    <p>We're sorry to see you go — you're always welcome back.</p>
+                    <p style="margin-top: 24px;">The AI Financial Coach Team</p>
+                </div>
+            `,
+        }).catch((err) => console.error("Account deletion email failed:", err.message));
+
+        return res.status(200).json({
+            success: true,
+            message: "Your account has been deleted",
             status: 200,
         });
 
