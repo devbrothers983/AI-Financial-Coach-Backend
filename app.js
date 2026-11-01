@@ -30,7 +30,8 @@ dotenv.config()
 const app = express()
 // Render sits behind a proxy; this makes req.ip the visitor's real IP
 app.set('trust proxy', 1)
-app.use(express.json())
+// larger limit for CSV transaction imports (up to 1000 rows)
+app.use(express.json({ limit: '2mb' }))
 app.use(morgan('dev'))
 app.use(helmet())
 // FRONTEND_URL can hold several comma-separated origins (e.g. Vercel + localhost)
@@ -42,6 +43,8 @@ const allowedOrigins = (process.env.FRONTEND_URL || "")
 app.use(cors({
     origin: allowedOrigins,
     credentials: true,
+    // lets the browser read the filename of CSV downloads
+    exposedHeaders: ['Content-Disposition'],
 }));
 
 

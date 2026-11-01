@@ -8,6 +8,7 @@ import Notification from "../models/Notification.js";
 import { sendMail } from "../utils/mailer.js";
 import { logActivity, describeDevice } from "../utils/activityLogger.js";
 import { notify } from "../utils/notify.js";
+import { toCsv, sendCsv, USER_COLUMNS, TRANSACTION_COLUMNS, todayStamp } from "../utils/csv.js";
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -968,6 +969,66 @@ export const getUnreadMessageCount = async (req, res, next) => {
             unreadCount,
             status: 200,
         });
+    } catch (err) {
+        next(err);
+    }
+};
+
+// ========================================
+// CSV Exports
+// ========================================
+
+export const exportUsers = async (req, res, next) => {
+    try {
+        const { search, role, status } = req.query;
+
+        const query = {};
+        if (search) {
+            const regex = new RegExp(escapeRegex(search.trim()), "i");
+            query.$or = [{ username: regex }, { email: regex }];
+        }
+        if (role) query.role = role;
+        if (status === "active") query.isActive = { $ne: false };
+        if (status === "inactive") query.isActive = false;
+
+        const users = await User.find(query).select(SAFE_USER_FIELDS).sort({ createdAt: -1 }).lean();
+
+        logActivity(req, {
+            action: "admin.export_users",
+            description: `Exported ${users.length} users to CSV`,
+            targetUserId: null,
+            metadata: { count: users.length, search, role, status },
+        });
+
+        return sendCsv(res, `users-${todayStamp()}.csv`, toCsv(users, USER_COLUMNS));
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const exportUserTransactions = async (req, res, next) => {
+    try {
+        const user = await User.findById(req.params.id).select("username email").lean();
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+                status: 404,
+            });
+        }
+
+        const transactions = await Transaction.find({ userId: user._id }).sort({ transactionDate: -1 }).lean();
+
+        logActivity(req, {
+            action: "admin.export_transactions",
+            description: `Exported ${user.username}'s ${transactions.length} transactions to CSV`,
+            targetUserId: user._id,
+            metadata: { targetUsername: user.username, targetEmail: user.email, count: transactions.length },
+        });
+
+        const safeName = user.username.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+        return sendCsv(res, `${safeName}-transactions-${todayStamp()}.csv`, toCsv(transactions, TRANSACTION_COLUMNS));
     } catch (err) {
         next(err);
     }

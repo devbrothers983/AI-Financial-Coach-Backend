@@ -7,6 +7,8 @@ import {
     getTransactionById,
     updateTransaction,
     deleteTransaction,
+    exportTransactions,
+    importTransactions,
 
 } from "../controllers/transactionController.js";
 import { authMiddleware } from "../middlewares/authMiddleware.js";
@@ -17,6 +19,8 @@ router.post("/create", authMiddleware, createTransaction);
 router.get("/all", authMiddleware, getALLTransactions);
 router.get("/summary", authMiddleware, getTransactionSummary)
 router.get("/category-breakdown", authMiddleware, getExpenseCategoryBreakdown)
+router.get("/export", authMiddleware, exportTransactions);
+router.post("/import", authMiddleware, importTransactions);
 router.get("/:id", authMiddleware, getTransactionById);
 router.put("/update/:id", authMiddleware, updateTransaction);
 router.delete("/delete/:id", authMiddleware, deleteTransaction);

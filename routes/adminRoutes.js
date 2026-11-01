@@ -17,6 +17,8 @@ import {
     deleteMessage,
     getActivityLogs,
     getUnreadMessageCount,
+    exportUsers,
+    exportUserTransactions,
 } from "../controllers/adminController.js";
 
 import {
@@ -43,6 +45,8 @@ router.put("/announcements/:id", updateAnnouncement);
 router.delete("/announcements/:id", deleteAnnouncement);
 
 router.get("/users", getAllUsers);
+router.get("/users/export", exportUsers);
+router.get("/users/:id/transactions/export", exportUserTransactions);
 router.get("/users/:id", getUserById);
 router.get("/users/:id/transactions", getUserTransactions);
 router.get("/users/:id/activity", getUserActivityTimeline);

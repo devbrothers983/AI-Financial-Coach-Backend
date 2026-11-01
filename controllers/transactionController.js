@@ -2,6 +2,7 @@ import Transaction from "../models/Transaction.js";
 import { toTitleCase } from "../utils/formatText.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { checkBudgetAlerts } from "../utils/budgetAlerts.js";
+import { toCsv, sendCsv, TRANSACTION_COLUMNS, todayStamp } from "../utils/csv.js";
 
 import mongoose from "mongoose";
 
@@ -625,3 +626,174 @@ export const deleteTransaction = async (
     }
 };
  
+
+
+// ========================================
+// Export Transactions (CSV)
+// ========================================
+
+export const exportTransactions = async (req, res, next) => {
+    try {
+        const { transactionType, startDate, endDate } = req.query;
+
+        const query = { userId: req.user._id };
+        if (transactionType === "income" || transactionType === "expense") query.transactionType = transactionType;
+        if (startDate || endDate) {
+            query.transactionDate = {};
+            if (startDate) query.transactionDate.$gte = new Date(startDate);
+            if (endDate) {
+                const nextDay = new Date(endDate);
+                nextDay.setDate(nextDay.getDate() + 1);
+                query.transactionDate.$lt = nextDay;
+            }
+        }
+
+        const transactions = await Transaction.find(query).sort({ transactionDate: -1 }).lean();
+
+        logActivity(req, {
+            action: "transaction.export",
+            description: `Exported ${transactions.length} transactions to CSV`,
+            metadata: { count: transactions.length },
+        });
+
+        return sendCsv(res, `transactions-${todayStamp()}.csv`, toCsv(transactions, TRANSACTION_COLUMNS));
+    } catch (err) {
+        next(err);
+    }
+};
+
+
+
+// ========================================
+// Import Transactions
+// The browser parses the CSV and maps its columns; this validates each row.
+// ========================================
+
+const VALID_CATEGORIES = Transaction.schema.path("transactionCategory").enumValues;
+const VALID_PAYMENT_METHODS = Transaction.schema.path("paymentMethod").enumValues;
+const MAX_IMPORT_ROWS = 1000;
+
+const normalizeKey = (value) => String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+
+const parseAmount = (value) => {
+    if (typeof value === "number") return value;
+    // "$1,234.50", "(25.00)", "-25" and European "1.234,50" are all accepted
+    const text = String(value || "").trim();
+    const negative = /^\(.*\)$/.test(text) || /^-/.test(text.replace(/^[^\d-]+/, ""));
+    let digits = text.replace(/[^\d.,]/g, "");
+    digits = /,\d{1,2}$/.test(digits)
+        ? digits.replace(/\./g, "").replace(",", ".")
+        : digits.replace(/,/g, "");
+    const number = parseFloat(digits);
+    return Number.isFinite(number) ? (negative ? -number : number) : NaN;
+};
+
+// "2026-12-31", US "12/31/2026" and European "31.12.2026", all read as UTC
+// dates so the day never shifts with the server's time zone
+const parseDate = (value) => {
+    const text = String(value || "").trim();
+    const dotted = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    const slashed = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const date = dotted
+        ? new Date(Date.UTC(+dotted[3], +dotted[2] - 1, +dotted[1]))
+        : slashed
+          ? new Date(Date.UTC(+slashed[3], +slashed[1] - 1, +slashed[2]))
+          : new Date(text);
+    return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const importTransactions = async (req, res, next) => {
+    try {
+        const { rows } = req.body;
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "No rows to import",
+                status: 400,
+            });
+        }
+
+        if (rows.length > MAX_IMPORT_ROWS) {
+            return res.status(400).json({
+                success: false,
+                message: `You can import up to ${MAX_IMPORT_ROWS} rows at a time`,
+                status: 400,
+            });
+        }
+
+        const docs = [];
+        const skipped = [];
+
+        rows.forEach((row, index) => {
+            const rowNumber = index + 1;
+
+            const amount = parseAmount(row.amount);
+            if (!Number.isFinite(amount) || amount === 0) {
+                skipped.push({ row: rowNumber, reason: "Missing or invalid amount" });
+                return;
+            }
+
+            const date = parseDate(row.date);
+            if (!date) {
+                skipped.push({ row: rowNumber, reason: "Missing or invalid date" });
+                return;
+            }
+
+            // an explicit type wins; otherwise negative amounts are expenses
+            const typeText = normalizeKey(row.type);
+            const transactionType = ["income", "credit", "deposit"].includes(typeText)
+                ? "income"
+                : ["expense", "debit", "withdrawal", "payment"].includes(typeText)
+                  ? "expense"
+                  : amount < 0
+                    ? "expense"
+                    : "income";
+
+            const category = normalizeKey(row.category);
+            const paymentMethod = normalizeKey(row.paymentMethod);
+
+            docs.push({
+                userId: req.user._id,
+                transactionType,
+                transactionAmount: Math.round(Math.abs(amount) * 100) / 100,
+                transactionCategory: VALID_CATEGORIES.includes(category) ? category : "other",
+                description: String(row.description || "").trim().slice(0, 200),
+                transactionDate: date,
+                paymentMethod: VALID_PAYMENT_METHODS.includes(paymentMethod) ? paymentMethod : "other",
+                transactionNotes: String(row.notes || "").trim().slice(0, 500),
+            });
+        });
+
+        const inserted = docs.length ? await Transaction.insertMany(docs) : [];
+
+        if (inserted.length) {
+            logActivity(req, {
+                action: "transaction.import",
+                description: `Imported ${inserted.length} transactions from CSV${skipped.length ? ` (${skipped.length} skipped)` : ""}`,
+                metadata: { imported: inserted.length, skipped: skipped.length },
+            });
+
+            // one budget check per month that received expenses
+            const months = new Set(
+                inserted
+                    .filter((t) => t.transactionType === "expense")
+                    .map((t) => `${t.transactionDate.getUTCFullYear()}-${t.transactionDate.getUTCMonth()}`)
+            );
+            months.forEach((key) => {
+                const [year, month] = key.split("-").map(Number);
+                checkBudgetAlerts(req.user, new Date(Date.UTC(year, month, 15)));
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: `Imported ${inserted.length} of ${rows.length} rows`,
+            imported: inserted.length,
+            skipped,
+            status: 200,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
