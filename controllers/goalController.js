@@ -3,6 +3,7 @@ import { toTitleCase } from "../utils/formatText.js";
 import { sweepCompletedBudgets } from "./budgetController.js";
 import { calculateGoalPace } from "../utils/goalPace.js";
 import { logActivity } from "../utils/activityLogger.js";
+import { checkGoalMilestones } from "../utils/goalMilestones.js";
 
 
 // ========================================
@@ -78,6 +79,8 @@ export const createGoal = async (req, res, next) => {
             targetId: goal._id,
             metadata: { title: goal.title, targetAmount: goal.targetAmount },
         });
+
+        checkGoalMilestones(req.user._id, goal, req.user.currency);
 
 
         return res.status(201).json({
@@ -346,6 +349,8 @@ export const updateGoal = async (
                 status: updatedGoal.status,
             },
         });
+
+        checkGoalMilestones(req.user._id, updatedGoal, req.user.currency);
 
 
         return res.status(200).json({

@@ -1,6 +1,7 @@
 import Transaction from "../models/Transaction.js";
 import { toTitleCase } from "../utils/formatText.js";
 import { logActivity } from "../utils/activityLogger.js";
+import { checkBudgetAlerts } from "../utils/budgetAlerts.js";
 
 import mongoose from "mongoose";
 
@@ -69,6 +70,10 @@ export const createTransaction = async (req, res, next) => {
             targetId: transaction._id,
             metadata: transactionMeta(transaction),
         });
+
+        if (transaction.transactionType === "expense") {
+            checkBudgetAlerts(req.user, transaction.transactionDate);
+        }
 
 
         return res.status(201).json({
@@ -535,6 +540,10 @@ export const updateTransaction = async (
             targetId: updatedTransaction._id,
             metadata: transactionMeta(updatedTransaction),
         });
+
+        if (updatedTransaction.transactionType === "expense") {
+            checkBudgetAlerts(req.user, updatedTransaction.transactionDate);
+        }
 
 
         return res.status(200).json({

@@ -5,6 +5,8 @@ import Transaction from "../models/Transaction.js";
 import Goal from "../models/Goal.js";
 import { calculateGoalPace } from "../utils/goalPace.js";
 import { logActivity } from "../utils/activityLogger.js";
+import { checkBudgetAlerts } from "../utils/budgetAlerts.js";
+import { checkGoalMilestones } from "../utils/goalMilestones.js";
 
 const normalizeCategories = (categories) =>
     Array.isArray(categories)
@@ -95,6 +97,7 @@ export const sweepCompletedBudgets = async (userId) => {
                 }
 
                 await goal.save();
+                checkGoalMilestones(userId, goal);
             }
 
             budget.sweptAmount = amountToAdd;
@@ -178,6 +181,8 @@ export const createBudget = async (req, res, next) => {
             targetId: budget._id,
             metadata: { month: budget.month, year: budget.year, totalBudget: budget.totalBudget },
         });
+
+        checkBudgetAlerts(req.user, new Date(Date.UTC(budget.year, budget.month - 1, 15)));
 
         return res.status(201).json({
             success: true,
@@ -720,6 +725,8 @@ export const updateBudget = async (req, res, next) => {
             targetId: updatedBudget._id,
             metadata: { month: updatedBudget.month, year: updatedBudget.year, totalBudget: updatedBudget.totalBudget },
         });
+
+        checkBudgetAlerts(req.user, new Date(Date.UTC(updatedBudget.year, updatedBudget.month - 1, 15)));
 
         return res.status(200).json({
             success: true,
