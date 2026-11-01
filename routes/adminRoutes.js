@@ -15,6 +15,7 @@ import {
     updateMessageReadStatus,
     replyToMessage,
     deleteMessage,
+    getActivityLogs,
 } from "../controllers/adminController.js";
 
 import { authMiddleware, roleMiddleware } from "../middlewares/authMiddleware.js";
@@ -26,6 +27,7 @@ router.use(authMiddleware, roleMiddleware("admin"));
 router.get("/overview", getAdminOverview);
 router.get("/reports", getAdminReports);
 router.get("/activity", getUserActivity);
+router.get("/logs", getActivityLogs);
 
 router.get("/users", getAllUsers);
 router.get("/users/:id", getUserById);

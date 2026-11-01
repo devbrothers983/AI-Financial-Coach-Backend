@@ -4,6 +4,7 @@ import { toTitleCase } from "../utils/formatText.js";
 import Transaction from "../models/Transaction.js";
 import Goal from "../models/Goal.js";
 import { calculateGoalPace } from "../utils/goalPace.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 const normalizeCategories = (categories) =>
     Array.isArray(categories)
@@ -170,6 +171,13 @@ export const createBudget = async (req, res, next) => {
         });
 
         await budget.populate("linkedGoal", "title targetAmount currentAmount");
+
+        logActivity(req, {
+            action: "budget.create",
+            description: `Set a budget of ${budget.totalBudget} for ${budget.month}/${budget.year}`,
+            targetId: budget._id,
+            metadata: { month: budget.month, year: budget.year, totalBudget: budget.totalBudget },
+        });
 
         return res.status(201).json({
             success: true,
@@ -706,6 +714,13 @@ export const updateBudget = async (req, res, next) => {
             });
         }
 
+        logActivity(req, {
+            action: "budget.update",
+            description: `Edited the budget for ${updatedBudget.month}/${updatedBudget.year} (now ${updatedBudget.totalBudget})`,
+            targetId: updatedBudget._id,
+            metadata: { month: updatedBudget.month, year: updatedBudget.year, totalBudget: updatedBudget.totalBudget },
+        });
+
         return res.status(200).json({
             success: true,
             message: "Budget updated successfully.",
@@ -738,6 +753,13 @@ export const deleteBudget = async (req, res, next) => {
                 status: 404,
             });
         }
+
+        logActivity(req, {
+            action: "budget.delete",
+            description: `Deleted the budget for ${deletedBudget.month}/${deletedBudget.year}`,
+            targetId: deletedBudget._id,
+            metadata: { month: deletedBudget.month, year: deletedBudget.year, totalBudget: deletedBudget.totalBudget },
+        });
 
         return res.status(200).json({
             success: true,

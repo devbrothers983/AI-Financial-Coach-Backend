@@ -1,7 +1,17 @@
 import Transaction from "../models/Transaction.js";
 import { toTitleCase } from "../utils/formatText.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 import mongoose from "mongoose";
+
+const describeTransaction = (t) => `${t.transactionType} of ${t.transactionAmount} (${t.transactionCategory})`;
+
+const transactionMeta = (t) => ({
+    transactionType: t.transactionType,
+    amount: t.transactionAmount,
+    category: t.transactionCategory,
+    description: t.description,
+});
 // ========================================
 // Create Transaction
 // ========================================
@@ -51,6 +61,13 @@ export const createTransaction = async (req, res, next) => {
             isRecurring,
             recurringFrequency,
             transactionNotes,
+        });
+
+        logActivity(req, {
+            action: "transaction.create",
+            description: `Added ${describeTransaction(transaction)}`,
+            targetId: transaction._id,
+            metadata: transactionMeta(transaction),
         });
 
 
@@ -512,6 +529,13 @@ export const updateTransaction = async (
 
         }
 
+        logActivity(req, {
+            action: "transaction.update",
+            description: `Edited ${describeTransaction(updatedTransaction)}`,
+            targetId: updatedTransaction._id,
+            metadata: transactionMeta(updatedTransaction),
+        });
+
 
         return res.status(200).json({
 
@@ -567,6 +591,13 @@ export const deleteTransaction = async (
             });
 
         }
+
+        logActivity(req, {
+            action: "transaction.delete",
+            description: `Deleted ${describeTransaction(transaction)}`,
+            targetId: transaction._id,
+            metadata: transactionMeta(transaction),
+        });
 
 
         return res.status(200).json({

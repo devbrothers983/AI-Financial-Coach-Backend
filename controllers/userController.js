@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import User from "../models/User.js";
 import { getCloudinary } from "../config/cloudinary.js";
 import { toTitleCase } from "../utils/formatText.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 // Whitelist exactly what the client is allowed to see, rather than trusting
 // whatever fields happen to exist on the document (e.g. stale fields left
@@ -94,6 +95,15 @@ export const updateProfile = async (req, res, next) => {
             { new: true, runValidators: true }
         );
 
+        const changed = Object.keys(updateData);
+        if (changed.length) {
+            logActivity(req, {
+                action: "profile.update",
+                description: `Updated profile (${changed.join(", ")})`,
+                metadata: { fields: changed, ...(updateData.email && { previousEmail: req.user.email }) },
+            });
+        }
+
         return res.status(200).json({
             success: true,
             message: "Profile updated successfully",
@@ -160,8 +170,14 @@ export const changePassword = async (req, res, next) => {
             }
         }
 
+        const hadPassword = Boolean(user.password);
         user.password = await bcrypt.hash(newPassword, 10);
         await user.save();
+
+        logActivity(req, {
+            action: "profile.password_change",
+            description: hadPassword ? "Changed password" : "Set a password for the first time",
+        });
 
         return res.status(200).json({
             success: true,
@@ -202,6 +218,8 @@ export const uploadAvatar = async (req, res, next) => {
             });
         }
 
+        logActivity(req, { action: "profile.avatar_update", description: "Changed profile photo" });
+
         return res.status(200).json({
             success: true,
             message: "Profile photo updated successfully",
@@ -230,6 +248,8 @@ export const deleteAvatar = async (req, res, next) => {
         user.avatarUrl = null;
         user.avatarPublicId = null;
         await user.save();
+
+        logActivity(req, { action: "profile.avatar_remove", description: "Removed profile photo" });
 
         return res.status(200).json({
             success: true,

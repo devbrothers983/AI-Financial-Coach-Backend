@@ -3,7 +3,25 @@ import Transaction from "../models/Transaction.js";
 import Budget from "../models/Budget.js";
 import Goal from "../models/Goal.js";
 import ContactMessage from "../models/ContactMessage.js";
+import ActivityLog from "../models/ActivityLog.js";
 import { sendMail } from "../utils/mailer.js";
+import { logActivity, describeDevice } from "../utils/activityLogger.js";
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Activity-log categories as they're grouped in a user's timeline
+const LOG_CATEGORY_TO_TYPE = {
+    auth: "account",
+    profile: "account",
+    transaction: "transaction",
+    budget: "budget",
+    goal: "goal",
+    message: "message",
+    admin: "admin",
+};
+
+// Already shown in the timeline from the user's own records
+const ACTIONS_COVERED_BY_RECORDS = ["auth.signup", "transaction.create", "budget.create", "goal.create", "goal.complete"];
 
 const SAFE_USER_FIELDS = "username email role currency isActive lastLoginAt createdAt onboardingCompleted avatarUrl authProvider";
 
@@ -236,11 +254,17 @@ export const getUserActivityTimeline = async (req, res, next) => {
             });
         }
 
-        // There's no dedicated activity log, so the timeline is built from
-        // the timestamps on everything the user has created.
+        // The timeline combines two sources: records the user created (which
+        // also covers activity from before the activity log existed) and the
+        // activity log (every sign-in, edit, delete and admin action). Log
+        // entries that the records already describe are skipped.
         const wants = (kind) => !type || type === kind;
 
-        const [transactions, budgets, goals, messages] = await Promise.all([
+        const logCategories = Object.entries(LOG_CATEGORY_TO_TYPE)
+            .filter(([, kind]) => wants(kind))
+            .map(([category]) => category);
+
+        const [transactions, budgets, goals, messages, logs] = await Promise.all([
             wants("transaction")
                 ? Transaction.find({ userId: id })
                       .select("transactionType transactionAmount transactionCategory description paymentMethod transactionDate isRecurring createdAt")
@@ -259,20 +283,45 @@ export const getUserActivityTimeline = async (req, res, next) => {
             wants("message")
                 ? ContactMessage.find({ email: user.email }).select("subject message source replies createdAt").sort({ createdAt: -1 }).limit(limit)
                 : [],
+            logCategories.length
+                ? ActivityLog.find({
+                      targetUserId: id,
+                      category: { $in: logCategories },
+                      action: { $nin: ACTIONS_COVERED_BY_RECORDS },
+                  })
+                      .sort({ createdAt: -1 })
+                      .limit(limit)
+                : [],
         ]);
+
+        const hasLoggedLogins = logs.some((l) => l.action === "auth.login");
 
         const accountEvents = [];
         if (wants("account")) {
             accountEvents.push({ type: "account", action: "signup", title: "Created an account", timestamp: user.createdAt });
-            if (user.lastLoginAt) {
+            if (user.lastLoginAt && !hasLoggedLogins) {
                 accountEvents.push({ type: "account", action: "login", title: "Signed in", detail: "Most recent sign-in", timestamp: user.lastLoginAt });
             }
         }
+
+        const logEvents = logs.map((l) => ({
+            type: LOG_CATEGORY_TO_TYPE[l.category],
+            action: l.action.split(".")[1],
+            title: l.description,
+            amount: l.metadata?.amount ?? l.metadata?.totalBudget ?? undefined,
+            meta: {
+                ...(l.category === "admin" && { by: l.username }),
+                ...(l.ip && { ip: l.ip }),
+                ...(l.userAgent && { device: describeDevice(l.userAgent) }),
+            },
+            timestamp: l.createdAt,
+        }));
 
         const monthName = (m, y) => new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
         const events = [
             ...accountEvents,
+            ...logEvents,
             ...transactions.map((t) => ({
                 type: "transaction",
                 action: t.transactionType,
@@ -375,6 +424,13 @@ export const updateUserRole = async (req, res, next) => {
             });
         }
 
+        logActivity(req, {
+            action: "admin.user_role",
+            description: `Changed ${user.username}'s role to ${role}`,
+            targetUserId: user._id,
+            metadata: { targetUsername: user.username, targetEmail: user.email, role },
+        });
+
         return res.status(200).json({
             success: true,
             message: "User role updated successfully",
@@ -421,6 +477,13 @@ export const updateUserStatus = async (req, res, next) => {
             });
         }
 
+        logActivity(req, {
+            action: "admin.user_status",
+            description: `${isActive ? "Reactivated" : "Deactivated"} ${user.username}'s account`,
+            targetUserId: user._id,
+            metadata: { targetUsername: user.username, targetEmail: user.email, isActive },
+        });
+
         return res.status(200).json({
             success: true,
             message: `User ${isActive ? "activated" : "deactivated"} successfully`,
@@ -463,6 +526,13 @@ export const deleteUser = async (req, res, next) => {
             Budget.deleteMany({ userId: id }),
             Goal.deleteMany({ userId: id }),
         ]);
+
+        logActivity(req, {
+            action: "admin.user_delete",
+            description: `Deleted ${user.username}'s account and data`,
+            targetUserId: user._id,
+            metadata: { targetUsername: user.username, targetEmail: user.email },
+        });
 
         return res.status(200).json({
             success: true,
@@ -738,6 +808,15 @@ export const replyToMessage = async (req, res, next) => {
         contactMessage.isRead = true;
         await contactMessage.save();
 
+        const recipient = await User.findOne({ email: contactMessage.email }).select("_id");
+        logActivity(req, {
+            action: "admin.message_reply",
+            description: `Replied to ${contactMessage.name}'s message "${contactMessage.subject}"`,
+            targetUserId: recipient?._id || null,
+            targetId: contactMessage._id,
+            metadata: { targetEmail: contactMessage.email, subject: contactMessage.subject },
+        });
+
         return res.status(200).json({
             success: true,
             message: "Reply sent successfully",
@@ -763,9 +842,75 @@ export const deleteMessage = async (req, res, next) => {
             });
         }
 
+        logActivity(req, {
+            action: "admin.message_delete",
+            description: `Deleted a message from ${deletedMessage.name} ("${deletedMessage.subject}")`,
+            targetUserId: null,
+            targetId: deletedMessage._id,
+            metadata: { targetEmail: deletedMessage.email, subject: deletedMessage.subject },
+        });
+
         return res.status(200).json({
             success: true,
             message: "Message deleted successfully",
+            status: 200,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+// ========================================
+// Activity Log (audit trail)
+// ========================================
+
+export const getActivityLogs = async (req, res, next) => {
+    try {
+        const { search, category, action, userId, page = 1, limit = 25 } = req.query;
+
+        const query = {};
+
+        if (search?.trim()) {
+            const regex = new RegExp(escapeRegex(search.trim()), "i");
+            query.$or = [{ username: regex }, { email: regex }, { description: regex }, { "metadata.targetEmail": regex }];
+        }
+        if (category) query.category = category;
+        if (action) query.action = { $in: String(action).split(",") };
+        if (userId) query.$and = [{ $or: [{ userId }, { targetUserId: userId }] }];
+
+        const pageNumber = Math.max(Number(page) || 1, 1);
+        const limitNumber = Math.min(Math.max(Number(limit) || 25, 1), 100);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        const [logs, totalLogs, last24h] = await Promise.all([
+            ActivityLog.find(query).sort({ createdAt: -1 }).skip(skip).limit(limitNumber).lean(),
+            ActivityLog.countDocuments(query),
+            ActivityLog.aggregate([
+                { $match: { createdAt: { $gte: since } } },
+                { $group: { _id: "$action", count: { $sum: 1 } } },
+            ]),
+        ]);
+
+        const countFor = (predicate) => last24h.filter((r) => predicate(r._id)).reduce((sum, r) => sum + r.count, 0);
+
+        return res.status(200).json({
+            success: true,
+            message: "Activity logs retrieved successfully",
+            pagination: {
+                currentPage: pageNumber,
+                totalPages: Math.ceil(totalLogs / limitNumber),
+                totalLogs,
+                limit: limitNumber,
+            },
+            summary: {
+                signIns: countFor((a) => a === "auth.login"),
+                failedSignIns: countFor((a) => a === "auth.login_failed" || a === "auth.login_blocked"),
+                dataChanges: countFor((a) => /^(transaction|budget|goal|profile)\./.test(a)),
+                adminActions: countFor((a) => a.startsWith("admin.")),
+            },
+            logs: logs.map((l) => ({ ...l, device: describeDevice(l.userAgent) })),
             status: 200,
         });
     } catch (err) {

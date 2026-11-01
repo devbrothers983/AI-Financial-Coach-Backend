@@ -25,6 +25,8 @@ dotenv.config()
 
 
 const app = express()
+// Render sits behind a proxy; this makes req.ip the visitor's real IP
+app.set('trust proxy', 1)
 app.use(express.json())
 app.use(morgan('dev'))
 app.use(helmet())

@@ -2,6 +2,7 @@ import Goal from "../models/Goal.js";
 import { toTitleCase } from "../utils/formatText.js";
 import { sweepCompletedBudgets } from "./budgetController.js";
 import { calculateGoalPace } from "../utils/goalPace.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 
 // ========================================
@@ -69,6 +70,13 @@ export const createGoal = async (req, res, next) => {
             currentAmount,
             targetDate,
             priority,
+        });
+
+        logActivity(req, {
+            action: "goal.create",
+            description: `Created goal "${goal.title}" with a target of ${goal.targetAmount}`,
+            targetId: goal._id,
+            metadata: { title: goal.title, targetAmount: goal.targetAmount },
         });
 
 
@@ -323,6 +331,22 @@ export const updateGoal = async (
                 }
             );
 
+        const justCompleted = goal.status !== "completed" && updatedGoal.status === "completed";
+
+        logActivity(req, {
+            action: justCompleted ? "goal.complete" : "goal.update",
+            description: justCompleted
+                ? `Completed goal "${updatedGoal.title}"`
+                : `Updated goal "${updatedGoal.title}" (${updatedGoal.currentAmount} of ${updatedGoal.targetAmount} saved)`,
+            targetId: updatedGoal._id,
+            metadata: {
+                title: updatedGoal.title,
+                targetAmount: updatedGoal.targetAmount,
+                currentAmount: updatedGoal.currentAmount,
+                status: updatedGoal.status,
+            },
+        });
+
 
         return res.status(200).json({
             success: true,
@@ -367,6 +391,13 @@ export const deleteGoal = async (
                 status: 404,
             });
         }
+
+        logActivity(req, {
+            action: "goal.delete",
+            description: `Deleted goal "${goal.title}"`,
+            targetId: goal._id,
+            metadata: { title: goal.title, targetAmount: goal.targetAmount, currentAmount: goal.currentAmount },
+        });
 
 
         return res.status(200).json({

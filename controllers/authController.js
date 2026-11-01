@@ -5,6 +5,7 @@ import { OAuth2Client } from 'google-auth-library';
 import User from '../models/User.js';
 import { sendWelcomeEmail, sendMail } from '../utils/mailer.js';
 import { toTitleCase } from '../utils/formatText.js';
+import { logActivity } from '../utils/activityLogger.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -59,11 +60,13 @@ export const registerUser = async (req, res, next) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        await User.create({
+        const newUser = await User.create({
             username,
             email,
             password: hashedPassword,
         })
+
+        logActivity(req, { action: "auth.signup", description: "Created an account", actor: newUser });
 
         sendWelcomeEmail(username, email).catch((err) => {
             console.error("Failed to send welcome email:", err.message);
@@ -115,6 +118,7 @@ export const loginUser = async (req, res, next) => {
         const isPasswordCorrect = await bcrypt.compare(password, user.password);
 
         if (!isPasswordCorrect) {
+            logActivity(req, { action: "auth.login_failed", description: "Failed sign-in (incorrect password)", actor: user });
             return res.status(400).json({
                 success: false,
                 message: "Incorrect password",
@@ -123,6 +127,7 @@ export const loginUser = async (req, res, next) => {
         }
 
         if (!user.isActive) {
+            logActivity(req, { action: "auth.login_blocked", description: "Sign-in blocked (account deactivated)", actor: user });
             return res.status(403).json({
                 success: false,
                 message: "This account has been deactivated. Contact support for help.",
@@ -132,6 +137,8 @@ export const loginUser = async (req, res, next) => {
 
         user.lastLoginAt = new Date();
         await user.save();
+
+        logActivity(req, { action: "auth.login", description: "Signed in with email", actor: user, metadata: { method: "email" } });
 
         const token = generateToken(user._id);
 
@@ -202,6 +209,7 @@ export const googleAuth = async (req, res, next) => {
         }
 
         if (!isNewUser && !user.isActive) {
+            logActivity(req, { action: "auth.login_blocked", description: "Google sign-in blocked (account deactivated)", actor: user });
             return res.status(403).json({
                 success: false,
                 message: "This account has been deactivated. Contact support for help.",
@@ -217,6 +225,11 @@ export const googleAuth = async (req, res, next) => {
 
         user.lastLoginAt = new Date();
         await user.save();
+
+        if (isNewUser) {
+            logActivity(req, { action: "auth.signup", description: "Created an account with Google", actor: user, metadata: { method: "google" } });
+        }
+        logActivity(req, { action: "auth.login", description: "Signed in with Google", actor: user, metadata: { method: "google" } });
 
         const token = generateToken(user._id);
 
@@ -345,6 +358,8 @@ export const resetPassword = async (req, res, next) => {
         user.resetPasswordOtp = undefined;
         user.resetPasswordOtpExpires = undefined;
         await user.save();
+
+        logActivity(req, { action: "auth.password_reset", description: "Reset password with an email code", actor: user });
 
         return res.status(200).json({
             success: true,
