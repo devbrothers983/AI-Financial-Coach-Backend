@@ -25,14 +25,20 @@ export const getDashboardOverview = async (
         if (!req.impersonator) await sweepCompletedBudgets(req.user._id);
 
 
-        // Current date
+        // Current month by default, or ?month=&year= to look at another one
         const now = new Date();
 
+        const requestedMonth = Number(req.query.month);
+        const requestedYear = Number(req.query.year);
+        const hasRequestedPeriod =
+            Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12 &&
+            Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= 2100;
+
         const currentMonth =
-            now.getUTCMonth() + 1;
+            hasRequestedPeriod ? requestedMonth : now.getUTCMonth() + 1;
 
         const currentYear =
-            now.getUTCFullYear();
+            hasRequestedPeriod ? requestedYear : now.getUTCFullYear();
 
 
         // ========================================
@@ -229,6 +235,23 @@ export const getDashboardOverview = async (
                 .limit(5);
 
 
+        // When this month has nothing yet (e.g. the 1st of the month), point
+        // the dashboard at the latest earlier month that does have data.
+        let lastActiveMonth = null;
+        if (transactionSummary.length === 0) {
+            const latestEarlier = await Transaction.findOne({ userId, transactionDate: { $lt: startDate } })
+                .sort({ transactionDate: -1 })
+                .select("transactionDate")
+                .lean();
+            if (latestEarlier) {
+                lastActiveMonth = {
+                    month: latestEarlier.transactionDate.getUTCMonth() + 1,
+                    year: latestEarlier.transactionDate.getUTCFullYear(),
+                };
+            }
+        }
+
+
         // ========================================
         // Response
         // ========================================
@@ -248,7 +271,13 @@ export const getDashboardOverview = async (
 
                     year:
                         currentYear,
+
+                    isCurrentMonth:
+                        currentMonth === now.getUTCMonth() + 1 &&
+                        currentYear === now.getUTCFullYear(),
                 },
+
+                lastActiveMonth,
 
                 finances: {
 
