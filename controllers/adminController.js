@@ -8,6 +8,7 @@ import Notification from "../models/Notification.js";
 import { sendMail } from "../utils/mailer.js";
 import { logActivity, describeDevice } from "../utils/activityLogger.js";
 import { notify } from "../utils/notify.js";
+import { removeAllConnectionsForUsers } from "../utils/bankSync.js";
 import { generateViewAsToken, VIEW_AS_MINUTES } from "../utils/token.js";
 import { toCsv, sendCsv, USER_COLUMNS, TRANSACTION_COLUMNS, todayStamp } from "../utils/csv.js";
 
@@ -17,6 +18,7 @@ const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const LOG_CATEGORY_TO_TYPE = {
     auth: "account",
     profile: "account",
+    bank: "account",
     transaction: "transaction",
     budget: "budget",
     goal: "goal",
@@ -524,6 +526,9 @@ export const deleteUser = async (req, res, next) => {
                 status: 404,
             });
         }
+
+        // ends Plaid's access to their bank, and its monthly fee
+        await removeAllConnectionsForUsers([id]);
 
         await Promise.all([
             Transaction.deleteMany({ userId: id }),
@@ -1078,6 +1083,7 @@ export const bulkUserAction = async (req, res, next) => {
         const userIds = users.map((u) => u._id);
 
         if (action === "delete") {
+            await removeAllConnectionsForUsers(userIds);
             await Promise.all([
                 User.deleteMany({ _id: { $in: userIds } }),
                 Transaction.deleteMany({ userId: { $in: userIds } }),

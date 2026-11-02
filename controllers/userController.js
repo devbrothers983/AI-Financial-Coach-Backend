@@ -13,6 +13,7 @@ import Notification from "../models/Notification.js";
 import ContactMessage from "../models/ContactMessage.js";
 import Announcement from "../models/Announcement.js";
 import { sendMail } from "../utils/mailer.js";
+import { removeAllConnectionsForUsers } from "../utils/bankSync.js";
 
 const LOGIN_HISTORY_ACTIONS = [
     "auth.login",
@@ -394,6 +395,9 @@ export const deleteMyAccount = async (req, res, next) => {
         }
 
         const userId = user._id;
+
+        // ends Plaid's access to their bank, and its monthly fee
+        await removeAllConnectionsForUsers([userId]);
 
         await Promise.all([
             Transaction.deleteMany({ userId }),

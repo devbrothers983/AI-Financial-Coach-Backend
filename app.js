@@ -23,6 +23,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import announcementRoutes from "./routes/announcementRoutes.js";
+import bankRoutes from "./routes/bankRoutes.js";
 
 dotenv.config()
 
@@ -31,7 +32,13 @@ const app = express()
 // Render sits behind a proxy; this makes req.ip the visitor's real IP
 app.set('trust proxy', 1)
 // larger limit for CSV transaction imports (up to 1000 rows)
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json({
+    limit: '2mb',
+    // Plaid's webhook signature covers the exact bytes it sent
+    verify: (req, res, buf) => {
+        if (req.originalUrl.startsWith('/api/bank/webhook')) req.rawBody = buf;
+    },
+}))
 app.use(morgan('dev'))
 app.use(helmet())
 // FRONTEND_URL can hold several comma-separated origins (e.g. Vercel + localhost)
@@ -60,6 +67,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/announcements", announcementRoutes);
+app.use("/api/bank", bankRoutes);
 
 
 

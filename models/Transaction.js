@@ -80,6 +80,35 @@ const transactionSchema = new mongoose.Schema({
         default: '',
     },
 
+    // Bank imports (Plaid); everything else is entered by hand or from a CSV
+    source: {
+        type: String,
+        enum: ['manual', 'bank'],
+        default: 'manual',
+    },
+    plaidTransactionId: {
+        type: String,
+    },
+    bankConnectionId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'BankConnection',
+        default: null,
+    },
+    bankAccountName: {
+        type: String,
+        default: '',
+    },
+    isPending: {
+        type: Boolean,
+        default: false,
+    },
+    // a manual entry that looks like the same purchase, for the user to review
+    possibleDuplicateOf: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Transaction',
+        default: null,
+    },
+
 
 }, 
 { timestamps: true }
@@ -87,6 +116,11 @@ const transactionSchema = new mongoose.Schema({
 );
 
 transactionSchema.index({userId: 1, transactionDate: -1})
+// a bank transaction can only be imported once
+transactionSchema.index(
+    { userId: 1, plaidTransactionId: 1 },
+    { unique: true, partialFilterExpression: { plaidTransactionId: { $type: 'string' } } }
+)
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 
