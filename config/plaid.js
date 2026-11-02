@@ -6,6 +6,16 @@ let client = null;
 export const isPlaidConfigured = () =>
     Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET && process.env.BANK_TOKEN_ENCRYPTION_KEY);
 
+// While BANK_TESTER_EMAILS is set (comma-separated), only those users can use
+// bank connections. Removing the setting opens the feature to everyone.
+export const canUseBanks = (user) => {
+    const testers = (process.env.BANK_TESTER_EMAILS || "")
+        .split(",")
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean);
+    return testers.length === 0 || testers.includes(String(user?.email || "").toLowerCase());
+};
+
 export const getPlaidClient = () => {
     if (!client) {
         const env = process.env.PLAID_ENV || "sandbox";

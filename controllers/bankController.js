@@ -1,6 +1,6 @@
 import BankConnection from "../models/BankConnection.js";
 import Transaction from "../models/Transaction.js";
-import { getPlaidClient, isPlaidConfigured, plaidErrorCode } from "../config/plaid.js";
+import { getPlaidClient, isPlaidConfigured, canUseBanks, plaidErrorCode } from "../config/plaid.js";
 import { encryptSecret, decryptSecret } from "../utils/tokenCipher.js";
 import { syncConnection, removeConnection, markConnectionNeedsReauth } from "../utils/bankSync.js";
 import { verifyPlaidWebhook } from "../utils/plaidWebhook.js";
@@ -31,6 +31,29 @@ const toSafeConnection = (c) => ({
 const plaidFailure = (res, err, message) => {
     console.error(`${message}: ${plaidErrorCode(err) || err.message}`);
     return res.status(502).json({ success: false, message, status: 502 });
+};
+
+// ========================================
+// Who Can Use Bank Connections
+// ========================================
+
+// tells the frontend whether to show the Connected banks link
+export const getBankAccess = (req, res) =>
+    res.status(200).json({
+        success: true,
+        available: isPlaidConfigured() && canUseBanks(req.user),
+        status: 200,
+    });
+
+export const requireBankAccess = (req, res, next) => {
+    if (!canUseBanks(req.user)) {
+        return res.status(403).json({
+            success: false,
+            message: "Bank connections aren't available for your account yet",
+            status: 403,
+        });
+    }
+    next();
 };
 
 // ========================================

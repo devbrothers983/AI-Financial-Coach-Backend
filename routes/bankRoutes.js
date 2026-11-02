@@ -1,6 +1,8 @@
 import express from "express";
 
 import {
+    getBankAccess,
+    requireBankAccess,
     getConnections,
     createLinkToken,
     exchangePublicToken,
@@ -17,6 +19,10 @@ const router = express.Router();
 router.post("/webhook", plaidWebhook);
 
 router.use(authMiddleware);
+
+router.get("/access", getBankAccess);
+
+router.use(requireBankAccess);
 
 router.get("/connections", getConnections);
 router.post("/link-token", createLinkToken);
