@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import { notifyMany } from "../utils/notify.js";
 import { sendMail } from "../utils/mailer.js";
 import { logActivity } from "../utils/activityLogger.js";
+import { escapeHtml, textToHtml } from "../utils/escapeHtml.js";
 
 const audienceQuery = (audience) => {
     const query = { isActive: { $ne: false } };
@@ -10,9 +11,6 @@ const audienceQuery = (audience) => {
     if (audience === "admins") query.role = "admin";
     return query;
 };
-
-const escapeHtml = (value = "") =>
-    value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 // Emails go out one at a time in the background so a large audience doesn't
 // hold up the request or trip Gmail's rate limits.
@@ -28,7 +26,7 @@ const emailAnnouncement = async (announcement, recipients) => {
                     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
                         <h2 style="color: #4f46e5;">${escapeHtml(announcement.title)}</h2>
                         <p>Hi ${escapeHtml(user.username)},</p>
-                        <p>${escapeHtml(announcement.body).replace(/\n/g, "<br/>")}</p>
+                        <p>${textToHtml(announcement.body)}</p>
                         <p style="margin-top: 24px;">The AI Financial Coach Team</p>
                     </div>
                 `,

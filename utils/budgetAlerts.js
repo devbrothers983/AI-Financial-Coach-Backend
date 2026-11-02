@@ -2,6 +2,7 @@ import Budget from "../models/Budget.js";
 import Transaction from "../models/Transaction.js";
 import { notify } from "./notify.js";
 import { sendMail } from "./mailer.js";
+import { escapeHtml } from "./escapeHtml.js";
 
 const THRESHOLDS = [100, 80];
 
@@ -91,9 +92,9 @@ export const checkBudgetAlerts = async (user, date = new Date()) => {
                     text: `Hi ${user.username},\n\n${title}.\n${body}\n\nReview your budget in AI Financial Coach.`,
                     html: `
                         <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
-                            <h2 style="color: #dc2626;">${title}</h2>
-                            <p>Hi ${user.username},</p>
-                            <p>${body}</p>
+                            <h2 style="color: #dc2626;">${escapeHtml(title)}</h2>
+                            <p>Hi ${escapeHtml(user.username)},</p>
+                            <p>${escapeHtml(body)}</p>
                             <p>Open AI Financial Coach to review your spending and budget.</p>
                         </div>
                     `,

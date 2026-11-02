@@ -1,7 +1,7 @@
 import BankConnection from "../models/BankConnection.js";
 import Transaction from "../models/Transaction.js";
 import User from "../models/User.js";
-import { getPlaidClient, plaidErrorCode } from "../config/plaid.js";
+import { getPlaidClient, isPlaidConfigured, plaidErrorCode } from "../config/plaid.js";
 import { decryptSecret } from "./tokenCipher.js";
 import { mapPlaidTransaction, findLikelyDuplicate } from "./plaidTransactions.js";
 import { checkBudgetAlerts } from "./budgetAlerts.js";
@@ -10,6 +10,8 @@ import { notify } from "./notify.js";
 const LOCK_MS = 5 * 60 * 1000;
 const MAX_PAGINATION_ATTEMPTS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const SYNC_START_DELAY_MS = 5 * 60 * 1000;
+const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 // Pulls every page since `startCursor`. If the data changes mid-way, Plaid
 // requires restarting from the first page of the update.
@@ -140,9 +142,13 @@ export const markConnectionNeedsReauth = async (connection, code) => {
     });
 };
 
+// The bank still works but will soon need a new sign-in, so a successful sync
+// mustn't clear the warning. Only reconnecting does.
+const ADVANCE_WARNINGS = ["PENDING_EXPIRATION", "PENDING_DISCONNECT"];
+
 // Syncs one connection. Returns null when another sync is already running
 // (that sync runs once more when it finishes, to pick up the new data).
-export const syncConnection = async (connectionId) => {
+export const syncConnection = async (connectionId, { reconnected = false } = {}) => {
     const now = new Date();
     const connection = await BankConnection.findOneAndUpdate(
         { _id: connectionId, $or: [{ syncLockedUntil: null }, { syncLockedUntil: { $lt: now } }] },
@@ -167,10 +173,16 @@ export const syncConnection = async (connectionId) => {
             totals[key] += result[key];
         });
 
+        const keepWarning = !reconnected && ADVANCE_WARNINGS.includes(connection.lastErrorCode);
+
         // the cursor only moves on after the changes are safely stored
         await BankConnection.updateOne(
             { _id: connection._id },
-            { cursor: updates.nextCursor, status: "active", lastSyncedAt: new Date(), lastErrorCode: null }
+            {
+                cursor: updates.nextCursor,
+                lastSyncedAt: new Date(),
+                ...(keepWarning ? {} : { status: "active", lastErrorCode: null }),
+            }
         );
 
         // only this month: alerts about old months from the history import would just be noise
@@ -225,6 +237,38 @@ export const removeConnection = async (connection) => {
         console.error(`Plaid item removal failed for connection ${connection._id} (item ${connection.itemId}): ${plaidErrorCode(err) || err.message}`);
     }
     await BankConnection.deleteOne({ _id: connection._id });
+};
+
+// Syncs every working connection one at a time, returning how many succeeded
+export const syncAllConnections = async () => {
+    const connections = await BankConnection.find({ status: "active" }).select("_id").lean();
+    let succeeded = 0;
+
+    for (const { _id } of connections) {
+        try {
+            await syncConnection(_id);
+            succeeded += 1;
+        } catch {
+            // already recorded on the connection and logged by syncConnection
+        }
+    }
+
+    return { total: connections.length, succeeded };
+};
+
+// Safety net for webhooks that never arrive: a sync shortly after each start, then every 6 hours
+export const startBankSyncSchedule = () => {
+    if (!isPlaidConfigured()) return;
+
+    const run = () =>
+        syncAllConnections()
+            .then(({ total, succeeded }) => {
+                if (total) console.log(`Scheduled bank sync: ${succeeded} of ${total} connections`);
+            })
+            .catch((err) => console.error(`Scheduled bank sync failed: ${err.message}`));
+
+    setTimeout(run, SYNC_START_DELAY_MS).unref();
+    setInterval(run, SYNC_INTERVAL_MS).unref();
 };
 
 export const removeAllConnectionsForUsers = async (userIds) => {

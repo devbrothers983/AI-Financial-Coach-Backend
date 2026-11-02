@@ -1,6 +1,7 @@
 import ContactMessage from "../models/ContactMessage.js";
 import { sendMail } from "../utils/mailer.js";
 import { logActivity } from "../utils/activityLogger.js";
+import { escapeHtml, textToHtml } from "../utils/escapeHtml.js";
 
 // A user's conversations: anything sent while signed in, plus older messages
 // sent from the same email address before accounts were linked.
@@ -160,8 +161,8 @@ export const replyToMyMessage = async (req, res, next) => {
             subject: `[AI Financial Coach] New reply from ${req.user.username}: ${contactMessage.subject}`,
             text: `${req.user.username} (${req.user.email}) replied:\n\n${message.trim()}`,
             html: `
-                <p><strong>${req.user.username}</strong> (${req.user.email}) replied in "${contactMessage.subject}":</p>
-                <p>${message.trim().replace(/\n/g, "<br/>")}</p>
+                <p><strong>${escapeHtml(req.user.username)}</strong> (${escapeHtml(req.user.email)}) replied in "${escapeHtml(contactMessage.subject)}":</p>
+                <p>${textToHtml(message.trim())}</p>
             `,
         }).catch((err) => {
             console.error("Failed to send reply notification:", err.message);

@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { OAuth2Client } from "google-auth-library";
+import { escapeHtml } from "./escapeHtml.js";
 
 // Render's free tier blocks outbound SMTP, so in production we send from the
 // same Gmail account through the Gmail API (HTTPS) when the GMAIL_* OAuth
@@ -74,7 +75,7 @@ export const sendWelcomeEmail = (username, email) => {
         text: `Hi ${username},\n\nWelcome to AI Financial Coach! Your account has been created successfully.\n\nStart logging your income and expenses, set a monthly budget, create savings goals, and let our AI coach turn your spending into clear, personalized guidance.\n\nHappy budgeting!\nThe AI Financial Coach Team`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
-                <h2 style="color: #059669;">Welcome to AI Financial Coach, ${username}! 🎉</h2>
+                <h2 style="color: #059669;">Welcome to AI Financial Coach, ${escapeHtml(username)}! 🎉</h2>
                 <p>Your account has been created successfully. We're excited to help you take control of your finances.</p>
                 <p>Here's what you can do next:</p>
                 <ul>

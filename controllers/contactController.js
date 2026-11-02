@@ -2,6 +2,7 @@ import { sendMail } from "../utils/mailer.js";
 import { toTitleCase } from "../utils/formatText.js";
 import ContactMessage from "../models/ContactMessage.js";
 import { logActivity } from "../utils/activityLogger.js";
+import { escapeHtml, textToHtml } from "../utils/escapeHtml.js";
 
 export const sendContactMessage = async (req, res, next) => {
     try {
@@ -52,10 +53,10 @@ export const sendContactMessage = async (req, res, next) => {
             subject: `[AI Financial Coach] ${subject || "New contact message"}`,
             text: `Name: ${name}\nEmail: ${email}\n\n${message}`,
             html: `
-                <p><strong>Name:</strong> ${name}</p>
-                <p><strong>Email:</strong> ${email}</p>
-                <p><strong>Subject:</strong> ${subject || "General"}</p>
-                <p>${message.replace(/\n/g, "<br/>")}</p>
+                <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+                <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+                <p><strong>Subject:</strong> ${escapeHtml(subject || "General")}</p>
+                <p>${textToHtml(message)}</p>
             `,
         }).catch((err) => {
             console.error("Failed to send contact notification:", err.message);

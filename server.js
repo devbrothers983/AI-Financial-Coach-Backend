@@ -2,6 +2,7 @@ import app from './app.js'
 import dotenv from 'dotenv'
 import connectDB from './config/db.js'
 import { backfillActivityLog } from './utils/activityLogger.js'
+import { startBankSyncSchedule } from './utils/bankSync.js'
 
 dotenv.config()
 
@@ -16,6 +17,7 @@ const startServer = async () => {
 
     app.listen(PORT, "0.0.0.0", () => {
         console.log(`Server is running on port ${PORT}`)
+        startBankSyncSchedule()
     })
 
 }

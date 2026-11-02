@@ -213,7 +213,8 @@ export const syncNow = async (req, res, next) => {
             return res.status(404).json({ success: false, message: "Bank connection not found", status: 404 });
         }
 
-        const synced = await syncConnection(connection._id);
+        // the page only offers this on a working bank, or right after reconnecting one
+        const synced = await syncConnection(connection._id, { reconnected: true });
         const fresh = await BankConnection.findById(connection._id);
 
         return res.status(200).json({
@@ -271,7 +272,7 @@ export const disconnectBank = async (req, res, next) => {
 // Plaid Webhook (public; authenticated by signature)
 // ========================================
 
-const handleWebhookEvent = async ({ webhook_type: type, webhook_code: code, item_id: itemId }) => {
+const handleWebhookEvent = async ({ webhook_type: type, webhook_code: code, item_id: itemId, error }) => {
     const connection = await BankConnection.findOne({ itemId });
     if (!connection) return;
 
@@ -282,7 +283,16 @@ const handleWebhookEvent = async ({ webhook_type: type, webhook_code: code, item
 
     if (type !== "ITEM") return;
 
-    if (code === "ERROR" || code === "PENDING_EXPIRATION" || code === "PENDING_DISCONNECT") {
+    if (code === "ERROR") {
+        // only a login problem can be fixed by signing in again
+        const errorCode = error?.error_code || "ITEM_ERROR";
+        if (errorCode === "ITEM_LOGIN_REQUIRED") {
+            await markConnectionNeedsReauth(connection, errorCode);
+        } else {
+            await BankConnection.updateOne({ _id: connection._id }, { lastErrorCode: errorCode });
+            console.error(`Plaid reported ${errorCode} for connection ${connection._id}`);
+        }
+    } else if (code === "PENDING_EXPIRATION" || code === "PENDING_DISCONNECT") {
         await markConnectionNeedsReauth(connection, code);
     } else if (code === "USER_PERMISSION_REVOKED" || code === "USER_ACCOUNT_REVOKED") {
         await BankConnection.updateOne({ _id: connection._id }, { status: "revoked", lastErrorCode: code });

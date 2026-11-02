@@ -14,6 +14,7 @@ import ContactMessage from "../models/ContactMessage.js";
 import Announcement from "../models/Announcement.js";
 import { sendMail } from "../utils/mailer.js";
 import { removeAllConnectionsForUsers } from "../utils/bankSync.js";
+import { escapeHtml } from "../utils/escapeHtml.js";
 
 const LOGIN_HISTORY_ACTIONS = [
     "auth.login",
@@ -430,7 +431,7 @@ export const deleteMyAccount = async (req, res, next) => {
             text: `Hi ${user.username},\n\nYour account and all of its data have been permanently deleted. We're sorry to see you go — you're always welcome back.\n\nThe AI Financial Coach Team`,
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
-                    <p>Hi ${user.username},</p>
+                    <p>Hi ${escapeHtml(user.username)},</p>
                     <p>Your account and all of its data have been permanently deleted.</p>
                     <p>We're sorry to see you go — you're always welcome back.</p>
                     <p style="margin-top: 24px;">The AI Financial Coach Team</p>

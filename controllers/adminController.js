@@ -9,6 +9,7 @@ import { sendMail } from "../utils/mailer.js";
 import { logActivity, describeDevice } from "../utils/activityLogger.js";
 import { notify } from "../utils/notify.js";
 import { removeAllConnectionsForUsers } from "../utils/bankSync.js";
+import { escapeHtml, textToHtml } from "../utils/escapeHtml.js";
 import { generateViewAsToken, VIEW_AS_MINUTES } from "../utils/token.js";
 import { toCsv, sendCsv, USER_COLUMNS, TRANSACTION_COLUMNS, todayStamp } from "../utils/csv.js";
 
@@ -117,7 +118,7 @@ export const getAllUsers = async (req, res, next) => {
         const query = {};
 
         if (search) {
-            const regex = new RegExp(search.trim(), "i");
+            const regex = new RegExp(escapeRegex(search.trim()), "i");
             query.$or = [{ username: regex }, { email: regex }];
         }
 
@@ -836,11 +837,11 @@ export const replyToMessage = async (req, res, next) => {
                 text: `Hi ${contactMessage.name},\n\n${message}${inboxLink ? `\n\nView or reply in your dashboard: ${inboxLink}` : ""}\n\n---\nYour original message:\n${contactMessage.message}`,
                 html: `
                     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
-                        <p>Hi ${contactMessage.name},</p>
-                        <p>${message.replace(/\n/g, "<br/>")}</p>
+                        <p>Hi ${escapeHtml(contactMessage.name)},</p>
+                        <p>${textToHtml(message)}</p>
                         ${inboxLink ? `<p style="margin: 24px 0;"><a href="${inboxLink}" style="background: #4f46e5; color: #ffffff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600;">View or reply in your dashboard</a></p>` : ""}
                         <hr style="margin: 24px 0; border: none; border-top: 1px solid #e2e8f0;" />
-                        <p style="color: #64748b; font-size: 13px;"><strong>Your original message:</strong><br/>${contactMessage.message.replace(/\n/g, "<br/>")}</p>
+                        <p style="color: #64748b; font-size: 13px;"><strong>Your original message:</strong><br/>${textToHtml(contactMessage.message)}</p>
                     </div>
                 `,
             });

@@ -6,6 +6,7 @@ import User from '../models/User.js';
 import { sendWelcomeEmail, sendMail } from '../utils/mailer.js';
 import { toTitleCase } from '../utils/formatText.js';
 import { logActivity } from '../utils/activityLogger.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -276,7 +277,7 @@ export const forgotPassword = async (req, res, next) => {
                 html: `
                     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
                         <h2 style="color: #059669;">Reset your password</h2>
-                        <p>Hi ${user.username},</p>
+                        <p>Hi ${escapeHtml(user.username)},</p>
                         <p>Use the code below to reset your AI Financial Coach password. It expires in 10 minutes.</p>
                         <p style="margin: 24px 0; text-align: center;">
                             <span style="display: inline-block; padding: 14px 28px; font-size: 28px; font-weight: 700; letter-spacing: 8px; background: #f1f5f9; border-radius: 10px; color: #059669;">${otp}</span>
