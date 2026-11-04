@@ -24,6 +24,7 @@ import messageRoutes from "./routes/messageRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import announcementRoutes from "./routes/announcementRoutes.js";
 import bankRoutes from "./routes/bankRoutes.js";
+import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 
 dotenv.config()
 
@@ -68,6 +69,7 @@ app.use("/api/messages", messageRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/announcements", announcementRoutes);
 app.use("/api/bank", bankRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 
 
 

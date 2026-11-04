@@ -69,6 +69,13 @@ const userSchema = new mongoose.Schema({
         default: 0,
     },
 
+    // Merchants the user said aren't really subscriptions
+    dismissedSubscriptions: {
+        type: [String],
+        default: [],
+        select: false,
+    },
+
 
     role: {
         type: String,

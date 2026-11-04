@@ -10,6 +10,7 @@ import Transaction from "../models/Transaction.js";
 import Budget from "../models/Budget.js";
 import Goal from "../models/Goal.js";
 import Notification from "../models/Notification.js";
+import Subscription from "../models/Subscription.js";
 import ContactMessage from "../models/ContactMessage.js";
 import Announcement from "../models/Announcement.js";
 import { sendMail } from "../utils/mailer.js";
@@ -405,6 +406,7 @@ export const deleteMyAccount = async (req, res, next) => {
             Budget.deleteMany({ userId }),
             Goal.deleteMany({ userId }),
             Notification.deleteMany({ userId }),
+            Subscription.deleteMany({ userId }),
             ContactMessage.deleteMany({ $or: [{ userId }, { email: user.email }] }),
             Announcement.updateMany({}, { $pull: { dismissedBy: userId } }),
         ]);

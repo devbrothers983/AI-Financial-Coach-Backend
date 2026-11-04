@@ -5,6 +5,7 @@ import Goal from "../models/Goal.js";
 import ContactMessage from "../models/ContactMessage.js";
 import ActivityLog from "../models/ActivityLog.js";
 import Notification from "../models/Notification.js";
+import Subscription from "../models/Subscription.js";
 import { sendMail } from "../utils/mailer.js";
 import { logActivity, describeDevice } from "../utils/activityLogger.js";
 import { notify } from "../utils/notify.js";
@@ -20,6 +21,7 @@ const LOG_CATEGORY_TO_TYPE = {
     auth: "account",
     profile: "account",
     bank: "account",
+    subscription: "account",
     transaction: "transaction",
     budget: "budget",
     goal: "goal",
@@ -536,6 +538,7 @@ export const deleteUser = async (req, res, next) => {
             Budget.deleteMany({ userId: id }),
             Goal.deleteMany({ userId: id }),
             Notification.deleteMany({ userId: id }),
+            Subscription.deleteMany({ userId: id }),
         ]);
 
         logActivity(req, {
@@ -1091,6 +1094,7 @@ export const bulkUserAction = async (req, res, next) => {
                 Budget.deleteMany({ userId: { $in: userIds } }),
                 Goal.deleteMany({ userId: { $in: userIds } }),
                 Notification.deleteMany({ userId: { $in: userIds } }),
+                Subscription.deleteMany({ userId: { $in: userIds } }),
             ]);
         } else {
             await User.updateMany({ _id: { $in: userIds } }, { isActive: action === "activate" });

@@ -108,6 +108,12 @@ const transactionSchema = new mongoose.Schema({
         ref: 'Transaction',
         default: null,
     },
+    // set when a tracked subscription added this expense automatically
+    subscriptionId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Subscription',
+        default: null,
+    },
 
 
 }, 
@@ -116,6 +122,11 @@ const transactionSchema = new mongoose.Schema({
 );
 
 transactionSchema.index({userId: 1, transactionDate: -1})
+// a subscription can only add one expense per charge date
+transactionSchema.index(
+    { subscriptionId: 1, transactionDate: 1 },
+    { unique: true, partialFilterExpression: { subscriptionId: { $type: 'objectId' } } }
+)
 // a bank transaction can only be imported once
 transactionSchema.index(
     { userId: 1, plaidTransactionId: 1 },
