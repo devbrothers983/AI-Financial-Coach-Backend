@@ -12,13 +12,12 @@ import {
 } from "../utils/subscriptionDates.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { websiteExists } from "../utils/websiteCheck.js";
+import { normalizeCategoryName, isValidCategory } from "../utils/categories.js";
 
 // A little over 2 years, so a yearly charge can be seen twice
 const HISTORY_DAYS = 760;
 const MAX_SUBSCRIPTIONS = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const CATEGORIES = Transaction.schema.path("transactionCategory").enumValues;
 
 const roundMoney = (amount) => Math.round(amount * 100) / 100;
 
@@ -182,10 +181,7 @@ const readFields = (body, { partial = false } = {}) => {
         values.billingDay = date.getUTCDate();
     }
 
-    if (body.category !== undefined) {
-        if (!CATEGORIES.includes(body.category)) return { error: "Choose a valid category" };
-        values.category = body.category;
-    }
+    if (body.category !== undefined) values.category = normalizeCategoryName(body.category);
 
     if (body.remindDaysBefore !== undefined) {
         const days = Number(body.remindDaysBefore);
@@ -232,6 +228,10 @@ export const createSubscription = async (req, res, next) => {
         const { error, values } = readFields(req.body);
         if (error) return res.status(400).json({ success: false, message: error, status: 400 });
 
+        if (values.category !== undefined && !(await isValidCategory(req.user._id, values.category))) {
+            return res.status(400).json({ success: false, message: "Choose a valid category", status: 400 });
+        }
+
         if (values.manageUrl && !(await websiteExists(values.manageUrl))) {
             return res.status(400).json({ success: false, message: WEBSITE_NOT_FOUND, status: 400 });
         }
@@ -276,6 +276,10 @@ export const updateSubscription = async (req, res, next) => {
 
         const { error, values } = readFields(req.body, { partial: true });
         if (error) return res.status(400).json({ success: false, message: error, status: 400 });
+
+        if (values.category !== undefined && !(await isValidCategory(req.user._id, values.category))) {
+            return res.status(400).json({ success: false, message: "Choose a valid category", status: 400 });
+        }
 
         const linkChanged = values.manageUrl && values.manageUrl !== subscription.manageUrl;
         if (linkChanged && !(await websiteExists(values.manageUrl))) {

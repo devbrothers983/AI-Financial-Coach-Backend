@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import { getPlaidClient, isPlaidConfigured, plaidErrorCode } from "../config/plaid.js";
 import { decryptSecret } from "./tokenCipher.js";
 import { mapPlaidTransaction, findLikelyDuplicate } from "./plaidTransactions.js";
+import { loadRules, findMatchingRule } from "./categories.js";
 import { checkBudgetAlerts } from "./budgetAlerts.js";
 import { notify } from "./notify.js";
 
@@ -53,6 +54,15 @@ export const applyUpdates = async (connection, updates) => {
     const newRows = updates.added
         .map((t) => ({ plaidId: t.transaction_id, fields: mapPlaidTransaction(t, accountsById) }))
         .filter((row) => row.fields);
+
+    // the user's own rules beat the category Plaid suggested
+    if (newRows.length) {
+        const rules = await loadRules(userId);
+        for (const { fields } of newRows) {
+            const rule = findMatchingRule(fields.description, rules);
+            if (rule) fields.transactionCategory = rule.category;
+        }
+    }
 
     let manual = [];
     if (newRows.length) {

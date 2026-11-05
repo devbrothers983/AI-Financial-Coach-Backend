@@ -2,11 +2,33 @@ import Transaction from "../models/Transaction.js";
 import { toTitleCase } from "../utils/formatText.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { checkBudgetAlerts } from "../utils/budgetAlerts.js";
+import { normalizeMerchant } from "../utils/detectSubscriptions.js";
+import {
+    isValidCategory,
+    normalizeCategoryName,
+    loadCategoryNames,
+    loadRules,
+    findMatchingRule,
+} from "../utils/categories.js";
 import { toCsv, sendCsv, TRANSACTION_COLUMNS, todayStamp } from "../utils/csv.js";
 
 import mongoose from "mongoose";
 
 const describeTransaction = (t) => `${t.transactionType} of ${t.transactionAmount} (${t.transactionCategory})`;
+
+// After a user changes a category by hand, offer to remember it for that
+// merchant, unless a rule for it already says the same thing
+const suggestRule = async (userId, previous, updated) => {
+    if (!previous || previous.transactionCategory === updated.transactionCategory) return null;
+
+    const matchText = normalizeMerchant(updated.description);
+    if (matchText.length < 2) return null;
+
+    const rule = findMatchingRule(updated.description, await loadRules(userId));
+    if (rule?.category === updated.transactionCategory) return null;
+
+    return { matchText, category: updated.transactionCategory };
+};
 
 const transactionMeta = (t) => ({
     transactionType: t.transactionType,
@@ -45,6 +67,15 @@ export const createTransaction = async (req, res, next) => {
                 success: false,
                 message:
                     "transactionType, transactionAmount, and transactionCategory are required",
+                status: 400,
+            });
+        }
+
+
+        if (!(await isValidCategory(req.user._id, transactionCategory))) {
+            return res.status(400).json({
+                success: false,
+                message: "Choose a valid category",
                 status: 400,
             });
         }
@@ -461,6 +492,14 @@ export const updateTransaction = async (
 
 
         if (transactionCategory !== undefined) {
+            if (!(await isValidCategory(req.user._id, transactionCategory))) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Choose a valid category",
+                    status: 400,
+                });
+            }
+
             updateData.transactionCategory =
                 transactionCategory;
         }
@@ -509,6 +548,10 @@ export const updateTransaction = async (
             another user's transaction.
         */
 
+        const previous = transactionCategory !== undefined
+            ? await Transaction.findOne({ _id: id, userId: req.user._id }).select("transactionCategory").lean()
+            : null;
+
         const updatedTransaction =
             await Transaction.findOneAndUpdate(
                 {
@@ -555,6 +598,8 @@ export const updateTransaction = async (
                 "Transaction updated successfully",
 
             transaction: updatedTransaction,
+
+            ruleSuggestion: await suggestRule(req.user._id, previous, updatedTransaction),
 
             status: 200,
         });
@@ -669,7 +714,6 @@ export const exportTransactions = async (req, res, next) => {
 // The browser parses the CSV and maps its columns; this validates each row.
 // ========================================
 
-const VALID_CATEGORIES = Transaction.schema.path("transactionCategory").enumValues;
 const VALID_PAYMENT_METHODS = Transaction.schema.path("paymentMethod").enumValues;
 const MAX_IMPORT_ROWS = 1000;
 
@@ -722,6 +766,8 @@ export const importTransactions = async (req, res, next) => {
             });
         }
 
+        const [knownCategories, rules] = await Promise.all([loadCategoryNames(req.user._id), loadRules(req.user._id)]);
+
         const docs = [];
         const skipped = [];
 
@@ -750,14 +796,19 @@ export const importTransactions = async (req, res, next) => {
                     ? "expense"
                     : "income";
 
-            const category = normalizeKey(row.category);
+            // the file's category if it's one the user has, otherwise their rules
+            const fileCategory = normalizeCategoryName(row.category);
+            const category =
+                knownCategories.has(fileCategory) && fileCategory !== "other"
+                    ? fileCategory
+                    : findMatchingRule(row.description, rules)?.category || "other";
             const paymentMethod = normalizeKey(row.paymentMethod);
 
             docs.push({
                 userId: req.user._id,
                 transactionType,
                 transactionAmount: Math.round(Math.abs(amount) * 100) / 100,
-                transactionCategory: VALID_CATEGORIES.includes(category) ? category : "other",
+                transactionCategory: category,
                 description: String(row.description || "").trim().slice(0, 200),
                 transactionDate: date,
                 paymentMethod: VALID_PAYMENT_METHODS.includes(paymentMethod) ? paymentMethod : "other",

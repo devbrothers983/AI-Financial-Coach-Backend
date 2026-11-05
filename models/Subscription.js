@@ -29,7 +29,7 @@ const subscriptionSchema = new mongoose.Schema(
         // the day of the month it bills on, kept so the 31st survives short months
         billingDay: { type: Number, min: 1, max: 31 },
 
-        category: { type: String, default: "other" },
+        category: { type: String, default: "subscriptions", lowercase: true, trim: true },
 
         status: {
             type: String,
