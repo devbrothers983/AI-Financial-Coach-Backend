@@ -11,12 +11,14 @@ import Budget from "../models/Budget.js";
 import Goal from "../models/Goal.js";
 import Notification from "../models/Notification.js";
 import Subscription from "../models/Subscription.js";
+import CoachChat from "../models/CoachChat.js";
 import Category from "../models/Category.js";
 import CategoryRule from "../models/CategoryRule.js";
 import ContactMessage from "../models/ContactMessage.js";
 import Announcement from "../models/Announcement.js";
 import { sendMail } from "../utils/mailer.js";
 import { removeAllConnectionsForUsers } from "../utils/bankSync.js";
+import { removeAllFromHouseholds } from "./householdController.js";
 import { escapeHtml } from "../utils/escapeHtml.js";
 
 const LOGIN_HISTORY_ACTIONS = [
@@ -73,7 +75,7 @@ export const getProfile = async (req, res, next) => {
         return res.status(200).json({
             success: true,
             message: "Profile retrieved successfully",
-            user: toSafeUser(user, { hasPassword }),
+            user: toSafeUser(user, { hasPassword, appInstalled: Boolean(user.appInstalledAt) }),
             status: 200,
         });
 
@@ -298,6 +300,27 @@ export const deleteAvatar = async (req, res, next) => {
 };
 
 
+// remembers the install on the account, keeping the first date
+export const markAppInstalled = async (req, res, next) => {
+    try {
+
+        await User.updateOne(
+            { _id: req.user._id, appInstalledAt: null },
+            { appInstalledAt: new Date() }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "App install saved",
+            status: 200,
+        });
+
+    } catch (err) {
+        next(err);
+    }
+};
+
+
 // recent sign-ins and security events for the signed-in user
 export const getLoginHistory = async (req, res, next) => {
     try {
@@ -402,6 +425,8 @@ export const deleteMyAccount = async (req, res, next) => {
 
         // ends Plaid's access to their bank, and its monthly fee
         await removeAllConnectionsForUsers([userId]);
+        // hands the household to someone else if they owned it
+        await removeAllFromHouseholds([userId]);
 
         await Promise.all([
             Transaction.deleteMany({ userId }),
@@ -409,6 +434,7 @@ export const deleteMyAccount = async (req, res, next) => {
             Goal.deleteMany({ userId }),
             Notification.deleteMany({ userId }),
             Subscription.deleteMany({ userId }),
+            CoachChat.deleteOne({ userId }),
             Category.deleteMany({ userId }),
             CategoryRule.deleteMany({ userId }),
             ContactMessage.deleteMany({ $or: [{ userId }, { email: user.email }] }),

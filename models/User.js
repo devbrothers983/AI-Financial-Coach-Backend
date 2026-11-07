@@ -69,6 +69,12 @@ const userSchema = new mongoose.Schema({
         default: 0,
     },
 
+    // When the user first installed the app, so we stop offering it on any device
+    appInstalledAt: {
+        type: Date,
+        default: null,
+    },
+
     // Merchants the user said aren't really subscriptions
     dismissedSubscriptions: {
         type: [String],

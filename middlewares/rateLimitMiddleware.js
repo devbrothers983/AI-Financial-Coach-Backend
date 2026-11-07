@@ -40,6 +40,14 @@ export const resetPasswordLimiter = limiter({
     message: tooMany("Too many attempts. Please wait 15 minutes and request a new code."),
 });
 
+// Each question costs money at the AI provider. Counted per signed-in user.
+export const coachChatLimiter = limiter({
+    windowMs: ONE_HOUR,
+    limit: 30,
+    keyGenerator: (req) => String(req.user._id),
+    message: tooMany("You've asked a lot of questions this hour. Please try again a little later."),
+});
+
 // Public form that sends an email for every message
 export const contactLimiter = limiter({
     windowMs: ONE_HOUR,

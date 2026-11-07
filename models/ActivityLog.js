@@ -26,7 +26,7 @@ const activityLogSchema = new mongoose.Schema(
 
         category: {
             type: String,
-            enum: ["auth", "transaction", "budget", "goal", "profile", "message", "admin", "coach", "bank", "subscription", "category"],
+            enum: ["auth", "transaction", "budget", "goal", "profile", "message", "admin", "coach", "bank", "subscription", "category", "household"],
             required: true,
             index: true,
         },

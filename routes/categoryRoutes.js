@@ -7,6 +7,7 @@ import {
     deleteCategory,
     saveRule,
     deleteRule,
+    sortUncategorized,
 } from "../controllers/categoryController.js";
 
 import { authMiddleware } from "../middlewares/authMiddleware.js";
@@ -17,6 +18,7 @@ router.use(authMiddleware);
 
 router.get("/", getCategories);
 router.post("/", createCategory);
+router.post("/sort-uncategorized", sortUncategorized);
 router.post("/rules", saveRule);
 router.delete("/rules/:id", deleteRule);
 router.put("/:id", renameCategory);

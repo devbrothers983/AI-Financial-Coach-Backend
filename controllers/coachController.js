@@ -4,6 +4,7 @@ import Transaction from "../models/Transaction.js";
 import Budget from "../models/Budget.js";
 import Goal from "../models/Goal.js";
 import { logActivity } from "../utils/activityLogger.js";
+import { aiServiceHeaders } from "../utils/aiService.js";
 
 
 // ========================================
@@ -330,10 +331,7 @@ export const checkAffordability = async (
                     method:
                         "POST",
 
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
+                    headers: aiServiceHeaders(),
 
                     body:
                         JSON.stringify(

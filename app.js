@@ -26,6 +26,7 @@ import announcementRoutes from "./routes/announcementRoutes.js";
 import bankRoutes from "./routes/bankRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
+import householdRoutes from "./routes/householdRoutes.js";
 
 dotenv.config()
 
@@ -72,6 +73,7 @@ app.use("/api/announcements", announcementRoutes);
 app.use("/api/bank", bankRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/household", householdRoutes);
 
 
 

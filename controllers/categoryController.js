@@ -14,6 +14,7 @@ import {
     isValidCategory,
     loadRules,
     findMatchingRule,
+    chooseCategory,
 } from "../utils/categories.js";
 
 const MAX_CATEGORIES = 50;
@@ -227,6 +228,50 @@ export const deleteRule = async (req, res, next) => {
         return res.status(200).json({
             success: true,
             message: "Rule removed. Existing transactions keep their category.",
+            status: 200,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+// ========================================
+// Sort Uncategorized Transactions
+// Only touches "other", so a category the user chose is never changed.
+// ========================================
+
+export const sortUncategorized = async (req, res, next) => {
+    try {
+        const userId = req.user._id;
+
+        const [transactions, rules] = await Promise.all([
+            Transaction.find({ userId, transactionCategory: "other" }).select("description transactionType").lean(),
+            loadRules(userId),
+        ]);
+
+        const operations = transactions
+            .map((t) => ({ id: t._id, category: chooseCategory(t.description, t.transactionType, rules) }))
+            .filter((t) => t.category !== "other")
+            .map((t) => ({
+                updateOne: {
+                    filter: { _id: t.id, userId, transactionCategory: "other" },
+                    update: { $set: { transactionCategory: t.category } },
+                },
+            }));
+
+        if (operations.length) await Transaction.bulkWrite(operations, { ordered: false });
+
+        const remaining = transactions.length - operations.length;
+
+        return res.status(200).json({
+            success: true,
+            message: operations.length
+                ? `Sorted ${operations.length} ${operations.length === 1 ? "transaction" : "transactions"}.${remaining ? ` ${remaining} still in Other.` : ""}`
+                : remaining
+                  ? `No matches found. ${remaining} still in Other, so you can add rules for them.`
+                  : "Nothing to sort",
+            sorted: operations.length,
+            remaining,
             status: 200,
         });
     } catch (err) {

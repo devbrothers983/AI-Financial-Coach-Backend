@@ -6,12 +6,14 @@ import ContactMessage from "../models/ContactMessage.js";
 import ActivityLog from "../models/ActivityLog.js";
 import Notification from "../models/Notification.js";
 import Subscription from "../models/Subscription.js";
+import CoachChat from "../models/CoachChat.js";
 import Category from "../models/Category.js";
 import CategoryRule from "../models/CategoryRule.js";
 import { sendMail } from "../utils/mailer.js";
 import { logActivity, describeDevice } from "../utils/activityLogger.js";
 import { notify } from "../utils/notify.js";
 import { removeAllConnectionsForUsers } from "../utils/bankSync.js";
+import { removeAllFromHouseholds } from "./householdController.js";
 import { escapeHtml, textToHtml } from "../utils/escapeHtml.js";
 import { generateViewAsToken, VIEW_AS_MINUTES } from "../utils/token.js";
 import { toCsv, sendCsv, USER_COLUMNS, TRANSACTION_COLUMNS, todayStamp } from "../utils/csv.js";
@@ -25,6 +27,7 @@ const LOG_CATEGORY_TO_TYPE = {
     bank: "account",
     subscription: "account",
     category: "account",
+    household: "account",
     transaction: "transaction",
     budget: "budget",
     goal: "goal",
@@ -535,6 +538,7 @@ export const deleteUser = async (req, res, next) => {
 
         // ends Plaid's access to their bank, and its monthly fee
         await removeAllConnectionsForUsers([id]);
+        await removeAllFromHouseholds([id]);
 
         await Promise.all([
             Transaction.deleteMany({ userId: id }),
@@ -542,6 +546,7 @@ export const deleteUser = async (req, res, next) => {
             Goal.deleteMany({ userId: id }),
             Notification.deleteMany({ userId: id }),
             Subscription.deleteMany({ userId: id }),
+            CoachChat.deleteOne({ userId: id }),
             Category.deleteMany({ userId: id }),
             CategoryRule.deleteMany({ userId: id }),
         ]);
@@ -1093,6 +1098,7 @@ export const bulkUserAction = async (req, res, next) => {
 
         if (action === "delete") {
             await removeAllConnectionsForUsers(userIds);
+            await removeAllFromHouseholds(userIds);
             await Promise.all([
                 User.deleteMany({ _id: { $in: userIds } }),
                 Transaction.deleteMany({ userId: { $in: userIds } }),
@@ -1100,6 +1106,7 @@ export const bulkUserAction = async (req, res, next) => {
                 Goal.deleteMany({ userId: { $in: userIds } }),
                 Notification.deleteMany({ userId: { $in: userIds } }),
                 Subscription.deleteMany({ userId: { $in: userIds } }),
+                CoachChat.deleteMany({ userId: { $in: userIds } }),
                 Category.deleteMany({ userId: { $in: userIds } }),
                 CategoryRule.deleteMany({ userId: { $in: userIds } }),
             ]);

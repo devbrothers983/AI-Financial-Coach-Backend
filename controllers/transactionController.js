@@ -9,6 +9,7 @@ import {
     loadCategoryNames,
     loadRules,
     findMatchingRule,
+    chooseCategory,
 } from "../utils/categories.js";
 import { toCsv, sendCsv, TRANSACTION_COLUMNS, todayStamp } from "../utils/csv.js";
 
@@ -796,12 +797,12 @@ export const importTransactions = async (req, res, next) => {
                     ? "expense"
                     : "income";
 
-            // the file's category if it's one the user has, otherwise their rules
+            // the file's category if it's one the user has, otherwise work it out
             const fileCategory = normalizeCategoryName(row.category);
             const category =
                 knownCategories.has(fileCategory) && fileCategory !== "other"
                     ? fileCategory
-                    : findMatchingRule(row.description, rules)?.category || "other";
+                    : chooseCategory(row.description, transactionType, rules);
             const paymentMethod = normalizeKey(row.paymentMethod);
 
             docs.push({

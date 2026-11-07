@@ -4,7 +4,7 @@ import User from "../models/User.js";
 import { getPlaidClient, isPlaidConfigured, plaidErrorCode } from "../config/plaid.js";
 import { decryptSecret } from "./tokenCipher.js";
 import { mapPlaidTransaction, findLikelyDuplicate } from "./plaidTransactions.js";
-import { loadRules, findMatchingRule } from "./categories.js";
+import { loadRules, findMatchingRule, chooseCategory } from "./categories.js";
 import { checkBudgetAlerts } from "./budgetAlerts.js";
 import { notify } from "./notify.js";
 
@@ -55,12 +55,16 @@ export const applyUpdates = async (connection, updates) => {
         .map((t) => ({ plaidId: t.transaction_id, fields: mapPlaidTransaction(t, accountsById) }))
         .filter((row) => row.fields);
 
-    // the user's own rules beat the category Plaid suggested
+    // the user's own rules beat the category Plaid suggested, and when Plaid
+    // has no useful category, the starting guesses get a try
     if (newRows.length) {
         const rules = await loadRules(userId);
         for (const { fields } of newRows) {
             const rule = findMatchingRule(fields.description, rules);
             if (rule) fields.transactionCategory = rule.category;
+            else if (fields.transactionCategory === "other") {
+                fields.transactionCategory = chooseCategory(fields.description, fields.transactionType, []);
+            }
         }
     }
 

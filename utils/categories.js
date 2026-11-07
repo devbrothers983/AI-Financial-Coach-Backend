@@ -1,8 +1,9 @@
 import Category from "../models/Category.js";
 import CategoryRule from "../models/CategoryRule.js";
 import { normalizeMerchant } from "./detectSubscriptions.js";
+import { DEFAULT_RULES } from "./defaultCategoryRules.js";
 
-export const BUILT_IN_EXPENSE_CATEGORIES = ["food", "groceries", "entertainment", "transportation", "bills", "subscriptions", "other"];
+export const BUILT_IN_EXPENSE_CATEGORIES = ["food", "groceries", "shopping", "entertainment", "transportation", "bills", "subscriptions", "other"];
 export const BUILT_IN_INCOME_CATEGORIES = ["salary", "freelance", "investment", "gift", "other"];
 export const BUILT_IN_CATEGORIES = [...new Set([...BUILT_IN_EXPENSE_CATEGORIES, ...BUILT_IN_INCOME_CATEGORIES])];
 
@@ -38,4 +39,14 @@ export const findMatchingRule = (description, rules) => {
         }
     }
     return best;
+};
+
+// The category for an imported transaction: the user's own rule first, then the
+// starting guesses for common merchants, then "other"
+export const chooseCategory = (description, transactionType, userRules) => {
+    const userRule = findMatchingRule(description, userRules);
+    if (userRule) return userRule.category;
+
+    const guess = findMatchingRule(description, DEFAULT_RULES[transactionType] || []);
+    return guess?.category || "other";
 };
