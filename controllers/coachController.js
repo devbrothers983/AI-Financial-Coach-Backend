@@ -4,7 +4,7 @@ import Transaction from "../models/Transaction.js";
 import Budget from "../models/Budget.js";
 import Goal from "../models/Goal.js";
 import { logActivity } from "../utils/activityLogger.js";
-import { aiServiceHeaders } from "../utils/aiService.js";
+import { aiServiceHeaders, aiServiceUrl } from "../utils/aiService.js";
 
 
 // ========================================
@@ -326,7 +326,7 @@ export const checkAffordability = async (
 
         const aiResponse =
             await fetch(
-                `${process.env.AI_SERVICE_URL}/ai/affordability`,
+                aiServiceUrl("/ai/affordability"),
                 {
                     method:
                         "POST",

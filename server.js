@@ -4,6 +4,7 @@ import connectDB from './config/db.js'
 import { backfillActivityLog } from './utils/activityLogger.js'
 import { startBankSyncSchedule } from './utils/bankSync.js'
 import { startSubscriptionSchedule } from './utils/subscriptionJobs.js'
+import { startAiKeepWarm } from './utils/aiService.js'
 
 dotenv.config()
 
@@ -20,6 +21,7 @@ const startServer = async () => {
         console.log(`Server is running on port ${PORT}`)
         startBankSyncSchedule()
         startSubscriptionSchedule()
+        startAiKeepWarm()
     })
 
 }

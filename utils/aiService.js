@@ -4,3 +4,42 @@ export const aiServiceHeaders = () => ({
     "Content-Type": "application/json",
     ...(process.env.AI_SERVICE_KEY && { "X-Internal-Key": process.env.AI_SERVICE_KEY }),
 });
+
+// The full address for an AI service path, tolerating a trailing slash in the setting
+export const aiServiceUrl = (path) => `${(process.env.AI_SERVICE_URL || "").trim().replace(/\/+$/, "")}${path}`;
+
+// Explains a failed call in the server log: a wrong address, a sleeping
+// service and a key mismatch each need a different fix
+export const describeAiFailure = (err) => {
+    if (err?.name === "TimeoutError") return "timed out (the AI service may have been asleep)";
+    // Node's fetch reports connection problems as "fetch failed", with the reason inside
+    const code = err?.cause?.code || err?.cause?.errors?.[0]?.code || err?.code;
+    if (code || err?.message === "fetch failed") return `couldn't connect (${code || "no response"}). Check AI_SERVICE_URL`;
+    return err?.message || err?.name || "unknown error";
+};
+
+// Hosting can put an idle service to sleep, and waking it takes about a
+// minute, which a user would see as a failed question. A light request every
+// 10 minutes keeps it awake.
+const KEEP_WARM_MS = 10 * 60 * 1000;
+
+const ping = async () => {
+    const response = await fetch(aiServiceUrl("/"), { signal: AbortSignal.timeout(90000) });
+    if (!response.ok) throw new Error(`status ${response.status}`);
+};
+
+export const startAiKeepWarm = () => {
+    if (!process.env.AI_SERVICE_URL) {
+        console.error("AI_SERVICE_URL is not set, so the AI coach can't work");
+        return;
+    }
+
+    // a check at startup puts any setup problem in the log straight away
+    ping()
+        .then(() => console.log(`AI service reachable at ${aiServiceUrl("")}`))
+        .catch((err) => console.error(`Can't reach the AI service at ${aiServiceUrl("")}: ${describeAiFailure(err)}`));
+
+    setInterval(() => {
+        ping().catch((err) => console.error(`AI service keep-warm failed: ${describeAiFailure(err)}`));
+    }, KEEP_WARM_MS).unref();
+};

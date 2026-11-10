@@ -1,13 +1,14 @@
 import CoachChat from "../models/CoachChat.js";
 import { buildFinancialContext } from "../utils/financialContext.js";
 import { logActivity } from "../utils/activityLogger.js";
-import { aiServiceHeaders } from "../utils/aiService.js";
+import { aiServiceHeaders, aiServiceUrl, describeAiFailure } from "../utils/aiService.js";
 
 const MAX_QUESTION_LENGTH = 1000;
 // how much of the conversation the AI sees, and how much is kept
 const MESSAGES_SENT_TO_AI = 12;
 const MESSAGES_KEPT = 100;
-const AI_TIMEOUT_MS = 60000;
+// generous, because a sleeping AI service can take about a minute to wake
+const AI_TIMEOUT_MS = 90000;
 
 // ========================================
 // Load the Conversation
@@ -55,23 +56,31 @@ export const sendMessage = async (req, res, next) => {
         const history = (chat?.messages || []).slice(-MESSAGES_SENT_TO_AI).map(({ role, content }) => ({ role, content }));
 
         let aiResponse;
+        let timedOut = false;
         try {
-            aiResponse = await fetch(`${process.env.AI_SERVICE_URL}/ai/chat`, {
+            aiResponse = await fetch(aiServiceUrl("/ai/chat"), {
                 method: "POST",
                 headers: aiServiceHeaders(),
                 body: JSON.stringify({ message, history, financial_context: financialContext }),
                 signal: AbortSignal.timeout(AI_TIMEOUT_MS),
             });
         } catch (err) {
-            console.error(`AI chat request failed: ${err.name}`);
+            timedOut = err.name === "TimeoutError";
+            console.error(`AI chat request to ${aiServiceUrl("/ai/chat")} failed: ${describeAiFailure(err)}`);
             aiResponse = null;
         }
 
         if (!aiResponse?.ok) {
-            if (aiResponse) console.error(`AI chat failed with status ${aiResponse.status}`);
+            if (aiResponse?.status === 401) {
+                console.error("AI chat refused: AI_SERVICE_KEY is different on the backend and the AI service");
+            } else if (aiResponse) {
+                console.error(`AI chat failed with status ${aiResponse.status}`);
+            }
             return res.status(502).json({
                 success: false,
-                message: "The coach couldn't answer right now. Please try again in a moment.",
+                message: timedOut
+                    ? "The coach is starting up, which can take a minute. Please ask again shortly."
+                    : "The coach couldn't answer right now. Please try again in a moment.",
                 status: 502,
             });
         }
