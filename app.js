@@ -27,6 +27,7 @@ import bankRoutes from "./routes/bankRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import householdRoutes from "./routes/householdRoutes.js";
+import { checkAiService } from "./utils/aiService.js";
 
 dotenv.config()
 
@@ -90,6 +91,12 @@ app.get('/health', (req, res) => {
         message: 'AI Financial Coach is running!',
     })
 
+})
+
+// Whether this server can reach the AI service, for checking the setup from
+// outside. It shows no settings or keys, only the AI service's host name.
+app.get('/health/ai', async (req, res) => {
+    res.status(200).json(await checkAiService())
 })
 
 

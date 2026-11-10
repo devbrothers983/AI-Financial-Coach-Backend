@@ -5,8 +5,13 @@ export const aiServiceHeaders = () => ({
     ...(process.env.AI_SERVICE_KEY && { "X-Internal-Key": process.env.AI_SERVICE_KEY }),
 });
 
-// The full address for an AI service path, tolerating a trailing slash in the setting
-export const aiServiceUrl = (path) => `${(process.env.AI_SERVICE_URL || "").trim().replace(/\/+$/, "")}${path}`;
+// The full address for an AI service path. Tolerates a trailing slash, and a
+// setting typed without "https://".
+export const aiServiceUrl = (path) => {
+    let base = (process.env.AI_SERVICE_URL || "").trim().replace(/\/+$/, "");
+    if (base && !/^https?:\/\//i.test(base)) base = `https://${base}`;
+    return `${base}${path}`;
+};
 
 // Explains a failed call in the server log: a wrong address, a sleeping
 // service and a key mismatch each need a different fix
@@ -42,4 +47,45 @@ export const startAiKeepWarm = () => {
     setInterval(() => {
         ping().catch((err) => console.error(`AI service keep-warm failed: ${describeAiFailure(err)}`));
     }, KEEP_WARM_MS).unref();
+};
+
+// For /health/ai: can this server reach the AI service, and does it accept our
+// key? An empty question is sent, which the AI service rejects without calling
+// the AI, so this costs nothing. Cached for a minute so it can't be used to flood it.
+let lastCheck = null;
+
+export const checkAiService = async () => {
+    if (lastCheck && Date.now() - lastCheck.at < 60000) return lastCheck.result;
+
+    let host = null;
+    try {
+        host = new URL(aiServiceUrl("/")).host;
+    } catch {
+        // AI_SERVICE_URL isn't a valid address
+    }
+
+    let result;
+    if (!host) {
+        result = { aiService: "not set up", detail: "AI_SERVICE_URL is missing or isn't a valid address" };
+    } else {
+        try {
+            const response = await fetch(aiServiceUrl("/ai/chat"), {
+                method: "POST",
+                headers: aiServiceHeaders(),
+                body: "{}",
+                signal: AbortSignal.timeout(90000),
+            });
+            result =
+                response.status === 422
+                    ? { aiService: "reachable", host }
+                    : response.status === 401
+                      ? { aiService: "key mismatch", host, detail: "AI_SERVICE_KEY must be identical on the backend and the AI service" }
+                      : { aiService: "unexpected response", host, detail: `status ${response.status}` };
+        } catch (err) {
+            result = { aiService: "unreachable", host, detail: describeAiFailure(err) };
+        }
+    }
+
+    lastCheck = { at: Date.now(), result };
+    return result;
 };
