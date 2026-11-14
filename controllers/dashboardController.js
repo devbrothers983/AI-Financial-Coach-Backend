@@ -3,6 +3,7 @@ import Transaction from "../models/Transaction.js";
 import Budget from "../models/Budget.js";
 import Goal from "../models/Goal.js";
 import { sweepCompletedBudgets } from "./budgetController.js";
+import { getBudgetPace } from "../utils/budgetPace.js";
 
 
 // ========================================
@@ -197,6 +198,14 @@ export const getDashboardOverview = async (
                     ),
 
                 status,
+
+                // early warning when spending runs ahead of the calendar
+                pace: await getBudgetPace({
+                    userId,
+                    budget,
+                    totalSpent: totalExpenses,
+                    now,
+                }),
             };
         }
 
